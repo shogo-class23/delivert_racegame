@@ -224,8 +224,21 @@
             }
             const tx = (targetPos.x - cub.position.x) * mapScale;
             const tz = (targetPos.z - cub.position.z) * mapScale;
+            
+            // ターゲットアイコン (三角マーク)
             mapCtx.fillStyle = missionState === 'PICKUP' ? 'gold' : '#0ff';
-            mapCtx.beginPath(); mapCtx.arc(tx, tz, 8, 0, Math.PI*2); mapCtx.fill();
+            mapCtx.shadowBlur = 15;
+            mapCtx.shadowColor = missionState === 'PICKUP' ? 'gold' : '#0ff';
+            
+            mapCtx.beginPath();
+            // 上向きの大きな三角形
+            mapCtx.moveTo(tx, tz - 12);
+            mapCtx.lineTo(tx - 8, tz + 6);
+            mapCtx.lineTo(tx + 8, tz + 6);
+            mapCtx.closePath();
+            mapCtx.fill();
+            
+            mapCtx.shadowBlur = 0;
             mapCtx.restore();
             mapCtx.fillStyle = '#0af'; mapCtx.beginPath(); mapCtx.arc(cx, cz, 5, 0, Math.PI*2); mapCtx.fill();
             mapCtx.beginPath(); mapCtx.moveTo(cx, cz-12); mapCtx.lineTo(cx-7, cz+2); mapCtx.lineTo(cx+7, cz+2); mapCtx.fill();
