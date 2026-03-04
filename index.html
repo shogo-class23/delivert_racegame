@@ -85,20 +85,19 @@
 
         // --- 設定 ---
         const LANE_WIDTH = 4;
+        const ROAD_COUNT = 3; // 道路の数
+        const TOTAL_WIDTH = LANE_WIDTH * 3 * ROAD_COUNT; // 合計の幅
         const SPEED_BASE = 0.5;
         const SPEED_NITRO = 1.2;
-        const ROTATION_SPEED = 0.1;
         
         let gameState = 'START';
         let speed = 0;
         let nitroTimer = 0;
         let score = 0;
-        let lane = 0; // -1, 0, 1
-        let targetX = 0;
         
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
-        scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
+        scene.fog = new THREE.Fog(0x87CEEB, 20, 120);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -109,8 +108,8 @@
         // --- ライティング ---
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
-        const sunLight = new THREE.DirectionalLight(0xffffff, 1);
-        sunLight.position.set(10, 20, 10);
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        sunLight.position.set(20, 40, 10);
         sunLight.castShadow = true;
         scene.add(sunLight);
 
@@ -166,6 +165,15 @@
             handle.position.set(0, 1.2, 0.5);
             group.add(handle);
 
+            // ヘッドライト
+            const light = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.15, 0.15, 0.1, 16),
+                new THREE.MeshStandardMaterial({ color: 0xffffaa, emissive: 0xffffaa })
+            );
+            light.rotation.x = Math.PI / 2;
+            light.position.set(0, 1.1, 0.7);
+            group.add(light);
+
             return group;
         }
 
@@ -179,23 +187,52 @@
         function createRoadSegment(z) {
             const segment = new THREE.Group();
             
-            // アスファルト
-            const ground = new THREE.Mesh(
-                new THREE.PlaneGeometry(12, 20),
-                new THREE.MeshStandardMaterial({ color: 0x333333 })
+            // 下地（緑地）
+            const green = new THREE.Mesh(
+                new THREE.PlaneGeometry(100, 20),
+                new THREE.MeshStandardMaterial({ color: 0x228b22 })
             );
-            ground.rotation.x = -Math.PI / 2;
-            ground.receiveShadow = true;
-            segment.add(ground);
+            green.rotation.x = -Math.PI / 2;
+            green.position.y = -0.05;
+            segment.add(green);
 
-            // 白線
-            const line = new THREE.Mesh(
-                new THREE.PlaneGeometry(0.2, 10),
-                new THREE.MeshStandardMaterial({ color: 0xffffff })
-            );
-            line.rotation.x = -Math.PI / 2;
-            line.position.y = 0.01;
-            segment.add(line);
+            // 3つの道路を作成
+            for (let r = 0; r < ROAD_COUNT; r++) {
+                const roadX = (r - 1) * 16; // 道路間の間隔
+                
+                // アスファルト
+                const ground = new THREE.Mesh(
+                    new THREE.PlaneGeometry(12, 20),
+                    new THREE.MeshStandardMaterial({ color: 0x333333 })
+                );
+                ground.rotation.x = -Math.PI / 2;
+                ground.position.x = roadX;
+                ground.receiveShadow = true;
+                segment.add(ground);
+
+                // 白線（左・右・中央）
+                [-4, 0, 4].forEach(lx => {
+                    const line = new THREE.Mesh(
+                        new THREE.PlaneGeometry(0.2, 10),
+                        new THREE.MeshStandardMaterial({ color: 0xffffff })
+                    );
+                    line.rotation.x = -Math.PI / 2;
+                    line.position.set(roadX + lx, 0.01, 0);
+                    segment.add(line);
+                });
+
+                // ガードレール
+                const railGeo = new THREE.BoxGeometry(0.2, 0.8, 20);
+                const railMat = new THREE.MeshStandardMaterial({ color: 0xcccccc });
+                
+                const leftRail = new THREE.Mesh(railGeo, railMat);
+                leftRail.position.set(roadX - 6.1, 0.4, 0);
+                segment.add(leftRail);
+
+                const rightRail = new THREE.Mesh(railGeo, railMat);
+                rightRail.position.set(roadX + 6.1, 0.4, 0);
+                segment.add(rightRail);
+            }
 
             segment.position.z = z;
             return segment;
@@ -218,28 +255,29 @@
         function updateMap() {
             mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
             
-            // 背景のグリッド（スクロール感）
-            mapCtx.strokeStyle = '#222';
-            const offset = (cub.position.z * 10) % 20;
-            for(let y=0; y<mapCanvas.height; y+=20) {
-                mapCtx.beginPath();
-                mapCtx.moveTo(0, y + offset);
-                mapCtx.lineTo(mapCanvas.width, y + offset);
-                mapCtx.stroke();
-            }
+            // 背景
+            mapCtx.fillStyle = 'rgba(0, 40, 0, 0.5)';
+            mapCtx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
 
             const centerX = mapCanvas.width / 2;
             const playerY = mapCanvas.height - 30;
-            const scale = 10; // 1m = 10px
+            const scale = 3; // 幅が広いのでスケールを小さく
+
+            // 道路の描画
+            mapCtx.fillStyle = '#333';
+            for(let r=0; r<ROAD_COUNT; r++) {
+                const roadX = (r - 1) * 16;
+                mapCtx.fillRect(centerX + (roadX - 6) * scale, 0, 12 * scale, mapCanvas.height);
+            }
 
             // 障害物 (赤)
             mapCtx.fillStyle = '#ff4500';
             obstacles.forEach(obs => {
                 const relX = (obs.position.x) * scale;
                 const relZ = (obs.position.z - cub.position.z) * scale;
-                if (playerY + relZ > 0) {
+                if (playerY + relZ > 0 && playerY + relZ < mapCanvas.height) {
                     mapCtx.beginPath();
-                    mapCtx.arc(centerX + relX, playerY + relZ, 3, 0, Math.PI * 2);
+                    mapCtx.arc(centerX + relX, playerY + relZ, 2, 0, Math.PI * 2);
                     mapCtx.fill();
                 }
             });
@@ -249,60 +287,55 @@
             items.forEach(item => {
                 const relX = (item.position.x) * scale;
                 const relZ = (item.position.z - cub.position.z) * scale;
-                if (playerY + relZ > 0) {
-                    mapCtx.beginPath();
-                    mapCtx.rect(centerX + relX - 3, playerY + relZ - 3, 6, 6);
-                    mapCtx.fill();
+                if (playerY + relZ > 0 && playerY + relZ < mapCanvas.height) {
+                    mapCtx.fillRect(centerX + relX - 2, playerY + relZ - 2, 4, 4);
                 }
             });
 
             // プレイヤー (青)
             mapCtx.fillStyle = '#00aaff';
             mapCtx.beginPath();
-            mapCtx.moveTo(centerX + (cub.position.x * scale), playerY - 5);
-            mapCtx.lineTo(centerX + (cub.position.x * scale) - 4, playerY + 5);
-            mapCtx.lineTo(centerX + (cub.position.x * scale) + 4, playerY + 5);
+            mapCtx.moveTo(centerX + (cub.position.x * scale), playerY - 4);
+            mapCtx.lineTo(centerX + (cub.position.x * scale) - 3, playerY + 4);
+            mapCtx.lineTo(centerX + (cub.position.x * scale) + 3, playerY + 4);
             mapCtx.fill();
         }
 
         function spawnEntity() {
             if (gameState !== 'PLAYING') return;
 
-            const laneX = (Math.floor(Math.random() * 3) - 1) * LANE_WIDTH;
-            const z = cub.position.z - 60;
+            // 全9車線のうちどこか
+            const roadIdx = Math.floor(Math.random() * 3) - 1; // -1, 0, 1
+            const laneIdx = Math.floor(Math.random() * 3) - 1; // -1, 0, 1
+            const laneX = roadIdx * 16 + laneIdx * LANE_WIDTH;
+            
+            const z = cub.position.z - 80;
 
-            if (Math.random() > 0.3) {
+            if (Math.random() > 0.4) {
                 // 障害物 (三角コーン)
                 const cone = new THREE.Mesh(
-                    new THREE.ConeGeometry(0.5, 1, 8),
+                    new THREE.ConeGeometry(0.5, 1.2, 8),
                     new THREE.MeshStandardMaterial({ color: 0xff4500 })
                 );
-                cone.position.set(laneX, 0.5, z);
+                cone.position.set(laneX, 0.6, z);
                 cone.castShadow = true;
                 scene.add(cone);
                 obstacles.push(cone);
             } else {
-                // 唐辛子 (ニトロアイテム)
+                // 唐辛子
                 const chili = new THREE.Group();
                 const body = new THREE.Mesh(
-                    new THREE.SphereGeometry(0.3, 8, 8),
+                    new THREE.SphereGeometry(0.4, 8, 8),
                     new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.5 })
                 );
                 chili.add(body);
-                const stem = new THREE.Mesh(
-                    new THREE.BoxGeometry(0.1, 0.3, 0.1),
-                    new THREE.MeshStandardMaterial({ color: 0x00ff00 })
-                );
-                stem.position.y = 0.3;
-                chili.add(stem);
-                
-                chili.position.set(laneX, 0.7, z);
+                chili.position.set(laneX, 0.8, z);
                 scene.add(chili);
                 items.push(chili);
             }
         }
 
-        setInterval(spawnEntity, 1000);
+        setInterval(spawnEntity, 600); // 道路が増えたので少し頻度を上げる
 
         // --- 入力処理 ---
         const keys = {};
@@ -321,28 +354,30 @@
             if (gameState === 'PLAYING') {
                 // 操作
                 if (keys['KeyA'] || keys['ArrowLeft'] || touchSide === 'left') {
-                    cub.position.x -= 0.15;
-                    cub.rotation.z = Math.PI * 0.1;
+                    cub.position.x -= 0.2;
+                    cub.rotation.z = Math.PI * 0.15;
+                    cub.rotation.y = Math.PI * 0.05;
                 } else if (keys['KeyD'] || keys['ArrowRight'] || touchSide === 'right') {
-                    cub.position.x += 0.15;
-                    cub.rotation.z = -Math.PI * 0.1;
+                    cub.position.x += 0.2;
+                    cub.rotation.z = -Math.PI * 0.15;
+                    cub.rotation.y = -Math.PI * 0.05;
                 } else {
-                    cub.rotation.z *= 0.9;
+                    cub.rotation.z *= 0.8;
+                    cub.rotation.y *= 0.8;
                 }
 
-                // 移動制限
-                cub.position.x = Math.max(-5, Math.min(5, cub.position.x));
+                // 移動制限 (全道路カバー: -16-6から16+6くらいまで)
+                cub.position.x = Math.max(-22, Math.min(22, cub.position.x));
 
                 // スピード更新
                 const targetSpeed = nitroTimer > 0 ? SPEED_NITRO : SPEED_BASE;
-                speed += (targetSpeed - speed) * 0.1;
+                speed += (targetSpeed - speed) * 0.05;
                 cub.position.z -= speed;
 
                 // ニトロタイマー
                 if (nitroTimer > 0) {
                     nitroTimer -= 1;
                     document.getElementById('nitro-fill').style.width = (nitroTimer / 180 * 100) + '%';
-                    // エフェクトっぽくバイクを揺らす
                     cub.position.y = 0 + Math.sin(Date.now() * 0.05) * 0.05;
                 } else {
                     document.getElementById('nitro-fill').style.width = '0%';
@@ -354,9 +389,9 @@
                 document.getElementById('score').innerText = `配達距離: ${score}m`;
                 document.getElementById('speed').innerText = `時速: ${Math.floor(speed * 120)} km/h`;
 
-                // カメラ追従
-                camera.position.set(cub.position.x * 0.5, cub.position.y + 3, cub.position.z + 6);
-                camera.lookAt(cub.position.x, cub.position.y + 1, cub.position.z - 5);
+                // カメラ追従 (少し引き気味にして広い世界を見せる)
+                camera.position.set(cub.position.x * 0.7, cub.position.y + 5, cub.position.z + 10);
+                camera.lookAt(cub.position.x, cub.position.y + 1, cub.position.z - 8);
 
                 // 道路のループ
                 roadGroup.children.forEach(seg => {
@@ -367,7 +402,7 @@
 
                 // 衝突判定
                 obstacles.forEach((obs, index) => {
-                    if (cub.position.distanceTo(obs.position) < 1) {
+                    if (cub.position.distanceTo(obs.position) < 1.2) {
                         gameState = 'GAMEOVER';
                         document.getElementById('game-over').style.display = 'flex';
                         document.getElementById('final-score').innerText = `記録: ${score}m`;
@@ -380,9 +415,9 @@
 
                 // アイテム取得
                 items.forEach((item, index) => {
-                    item.rotation.y += 0.05;
-                    if (cub.position.distanceTo(item.position) < 1.2) {
-                        nitroTimer = 180; // 約3秒
+                    item.rotation.y += 0.1;
+                    if (cub.position.distanceTo(item.position) < 1.5) {
+                        nitroTimer = 180;
                         scene.remove(item);
                         items.splice(index, 1);
                     }
