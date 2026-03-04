@@ -156,6 +156,7 @@
         }
         const cub = createCub();
         cub.scale.set(1.8, 1.8, 1.8);
+        cub.position.set(0, 0, 40); // 交差点を避けて開始
         scene.add(cub);
 
         // --- 3Dガイドラインの初期化 ---
@@ -333,11 +334,11 @@
             const tz = (targetPos.z - cub.position.z) * mapScale;
             
             // マップ上のガイドライン
-            mapCtx.setLineDash([5, 5]);
-            mapCtx.strokeStyle = mapCtx.fillStyle = missionState === 'PICKUP' ? 'gold' : (missionState === 'REFUEL' ? '#32cd32' : '#0ff');
-            mapCtx.lineWidth = 2;
+            mapCtx.setLineDash([8, 4]);
+            mapCtx.strokeStyle = missionState === 'PICKUP' ? 'gold' : (missionState === 'REFUEL' ? '#32cd32' : '#0ff');
+            mapCtx.lineWidth = 4; // 少し太くして見やすく
             mapCtx.beginPath();
-            mapCtx.moveTo(0, 0); // プレイヤー位置 (cx, cz に translate 済み)
+            mapCtx.moveTo(0, 0); 
             mapCtx.lineTo(tx, tz);
             mapCtx.stroke();
             mapCtx.setLineDash([]);
