@@ -92,6 +92,7 @@
         let direction = new THREE.Vector3(0, 0, -1);
         let targetPos = new THREE.Vector3();
         let targetGX = 0, targetGZ = 0;
+        let immuneBuilding = null; // アクション直後に衝突判定を一時的に無効にする建物
         
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -257,6 +258,9 @@
 
         function checkInteraction() {
             if (cub.position.distanceTo(targetPos) < 20 && Math.abs(speed) < 0.1) {
+                // 現在の建物を「無敵リスト」に入れる
+                immuneBuilding = targetPos.clone();
+
                 if (missionState === 'PICKUP') {
                     missionState = 'DELIVERY'; cub.cargo.visible = true; setRandomTarget();
                 } else {
@@ -316,12 +320,25 @@
 
                 obstacles.forEach((obs, i) => {
                     if (cub.position.distanceTo(obs.position) < 1.1) endGame("障害物に激突しました");
-                });
+                // 当たり判定 (建物)
                 buildingMeshes.forEach(b => {
+                    const dist = cub.position.distanceTo(b.pos);
+
+                    // 無敵中の建物から離れたら無敵解除
+                    if (immuneBuilding && cub.position.distanceTo(immuneBuilding) > 35) {
+                        immuneBuilding = null;
+                    }
+
+                    // 無敵中の建物（今アクションした場所）は無視する
+                    if (immuneBuilding && b.pos.distanceTo(immuneBuilding) < 1) {
+                        return;
+                    }
+
                     if (Math.abs(cub.position.x - b.pos.x) < b.size/2+0.5 && Math.abs(cub.position.z - b.pos.z) < b.size/2+0.5) {
                         if (!b.isTarget) endGame("建物に衝突しました");
                     }
                 });
+
                 ring.rotation.z += 0.05;
             }
             updateMap();
