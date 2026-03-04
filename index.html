@@ -43,7 +43,10 @@
         <div id="deliv-count" style="margin-top: 5px; font-size: 20px; color: gold;">完了数: 0</div>
     </div>
 
-    <div id="mission-ui">お店を探せ！</div>
+    <div id="mission-ui">
+        <div id="mission-text">お店を探せ！</div>
+        <div id="distance-text" style="font-size: 28px; color: #fff; margin-top: 5px;">あと ---m</div>
+    </div>
     <div id="interact-prompt">E キーでアクション！</div>
 
     <div id="map-container">
@@ -145,11 +148,11 @@
             
             if (missionState === 'PICKUP') {
                 beam.material.color.set(0xffff00); ring.material.color.set(0xffff00);
-                document.getElementById('mission-ui').innerText = "お店（黄色の建物）へ荷物を取りに行け！";
+                document.getElementById('mission-text').innerText = "お店（黄色の建物）へ荷物を取りに行け！";
                 document.getElementById('mission-ui').style.color = "gold";
             } else {
                 beam.material.color.set(0x00ffff); ring.material.color.set(0x00ffff);
-                document.getElementById('mission-ui').innerText = "お届け先（青色の家）へ配達せよ！";
+                document.getElementById('mission-text').innerText = "お届け先（青色の家）へ配達せよ！";
                 document.getElementById('mission-ui').style.color = "#00ffff";
             }
             // 道路の再生成を促す
@@ -313,6 +316,9 @@
                 if (nitroTimer > 0) { nitroTimer--; document.getElementById('nitro-fill').style.width = (nitroTimer/300*100)+'%'; }
                 
                 const distToTarget = cub.position.distanceTo(targetPos);
+                document.getElementById('distance-text').innerText = `あと ${Math.floor(distToTarget)}m`;
+                document.getElementById('distance-text').style.color = distToTarget < 25 ? "#0f0" : "#fff";
+                
                 document.getElementById('interact-prompt').style.display = (distToTarget < 20 && Math.abs(speed) < 0.1) ? 'block' : 'none';
 
                 camera.position.lerp(cub.position.clone().add(new THREE.Vector3(0, 5, 12).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY)), 0.1);
