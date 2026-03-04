@@ -161,7 +161,7 @@
         }
         const cub = createCub();
         cub.scale.set(1.8, 1.8, 1.8);
-        cub.position.set(0, 0, 40); // 交差点を避けて開始
+        cub.position.set(-4, 0, 40); // 左車線に寄せて開始
         scene.add(cub);
 
         // --- 3Dガイドラインの初期化 ---
@@ -320,11 +320,19 @@
                 const box = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 0.5), new THREE.MeshStandardMaterial({ color: 0x111111 }));
                 box.position.y = 6; pGroup.add(box);
 
-                // 警告灯 (赤2つ)
-                const l1 = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshBasicMaterial({ color: 0x330000 }));
-                l1.position.set(-0.5, 6, 0.26); pGroup.add(l1);
-                const l2 = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshBasicMaterial({ color: 0x330000 }));
-                l2.position.set(0.5, 6, 0.26); pGroup.add(l2);
+                // 警告灯 (前後に2つずつ、計4つ)
+                const createLamp = (lx, lz) => {
+                    const l = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshBasicMaterial({ color: 0x330000 }));
+                    l.position.set(lx, 6, lz);
+                    pGroup.add(l);
+                    return l;
+                };
+                const l1_f = createLamp(-0.5, 0.26); // 前
+                const l2_f = createLamp(0.5, 0.26);  // 前
+                const l1_b = createLamp(-0.5, -0.26); // 後
+                const l2_b = createLamp(0.5, -0.26);  // 後
+                l1_b.rotation.y = Math.PI;
+                l2_b.rotation.y = Math.PI;
 
                 // 遮断機の棒 (黄色と黒)
                 const barGroup = new THREE.Group();
@@ -342,7 +350,7 @@
                 pGroup.add(barGroup);
 
                 group.add(pGroup);
-                crossingGates.push({ barGroup, lights: [l1, l2], gz: gz, side: side });
+                crossingGates.push({ barGroup, lights: [l1_f, l2_f, l1_b, l2_b], gz: gz });
             });
 
             group.position.set(x, 0, z);
@@ -553,11 +561,13 @@
                     // 警告灯の点滅
                     if (isTrainApproaching || isTrainPassing) {
                         const flash = Math.floor(Date.now() / 300) % 2;
+                        // 左側のランプ(0,2)と右側のランプ(1,3)を交互に
                         g.lights[0].material.color.set(flash === 0 ? 0xff0000 : 0x330000);
+                        g.lights[2].material.color.set(flash === 0 ? 0xff0000 : 0x330000);
                         g.lights[1].material.color.set(flash === 1 ? 0xff0000 : 0x330000);
+                        g.lights[3].material.color.set(flash === 1 ? 0xff0000 : 0x330000);
                     } else {
-                        g.lights[0].material.color.set(0x330000);
-                        g.lights[1].material.color.set(0x330000);
+                        g.lights.forEach(l => l.material.color.set(0x330000));
                     }
 
                     // 遮断機への衝突判定 (降りている[0付近]時のみ)
@@ -630,23 +640,25 @@
                 }
 
                 // 信号無視判定 (進入時のみ一回チェック)
+                const gx_now = Math.round(cub.position.x / GRID_SIZE);
+                const gz_now = Math.round(cub.position.z / GRID_SIZE);
+                const isRailwayTile = (gz_now % 4 === 0);
+
                 const relX = Math.abs(cub.position.x % GRID_SIZE);
                 const relZ = Math.abs(cub.position.z % GRID_SIZE);
-                // 交差点（グリッドの境界付近）にいるか判定 (範囲を12mに絞る)
                 const inIntersection = (relX < 12 || relX > GRID_SIZE - 12) && (relZ < 12 || relZ > GRID_SIZE - 12);
 
-                if (inIntersection) {
+                if (inIntersection && !isRailwayTile) {
                     if (!intersectionProcessed && Math.abs(speed) > 0.1) {
-                        // プレイヤーの向きを判定
                         const isMovingNS = Math.abs(direction.z) > Math.abs(direction.x);
                         let isIllegal = false;
 
                         if (isMovingNS) {
-                            // 南北走行中: フェーズ0(NS青)以外はダメ
-                            if (trafficPhase !== 0) isIllegal = true;
+                            // 南北走行中: 青(0)か黄(1)ならOK。それ以外(2,3,4,5)は赤系なのでダメ。
+                            if (trafficPhase >= 2) isIllegal = true;
                         } else {
-                            // 東西走行中: フェーズ3(EW青)以外はダメ
-                            if (trafficPhase !== 3) isIllegal = true;
+                            // 東西走行中: 青(3)か黄(4)ならOK。それ以外(5,0,1,2)は赤系なのでダメ。
+                            if (trafficPhase <= 2 || trafficPhase === 5) isIllegal = true;
                         }
 
                         if (isIllegal) {
