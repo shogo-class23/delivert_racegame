@@ -285,7 +285,18 @@
                 if (gameMode === 'BIKE') {
                     targetPos.set(targetGX * GRID_SIZE - 40, 0, targetGZ * GRID_SIZE - 40);
                 } else {
-                    targetPos.set(targetGX * GRID_SIZE - 8, 0, targetGZ * GRID_SIZE - 20);
+                    // バス停: 交差点から離れた(40)道路脇(左車線外側)に設置
+                    // 南北の道路か東西の道路かをランダムに決定
+                    const onNS = Math.random() > 0.5;
+                    if (onNS) {
+                        const laneSide = Math.random() > 0.5 ? 8 : -8; // 道路の右端か左端か
+                        targetPos.set(targetGX * GRID_SIZE + laneSide, 0, targetGZ * GRID_SIZE + (Math.random() > 0.5 ? 40 : -40));
+                    } else {
+                        // 線路タイル(gz%4===0)を避ける
+                        if (targetGZ % 4 === 0) targetGZ++;
+                        const laneSide = Math.random() > 0.5 ? 8 : -8;
+                        targetPos.set(targetGX * GRID_SIZE + (Math.random() > 0.5 ? 40 : -40), 0, targetGZ * GRID_SIZE + laneSide);
+                    }
                     busStopModel.position.copy(targetPos);
                     busStopModel.visible = true;
                 }
@@ -851,7 +862,42 @@
                 playerVehicle.position.add(direction.clone().multiplyScalar(speed));
                 playerVehicle.rotation.y = currentRotationY;
 
-                // バイクモード限定の燃料消費と信号無視
+                // 信号無視判定 (共通)
+                const relX = ((playerVehicle.position.x % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
+                const relZ = ((playerVehicle.position.z % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
+                const inIntersection = (relX < 15 || relX > GRID_SIZE - 15) && (relZ < 15 || relZ > GRID_SIZE - 15);
+                const gz_now = Math.round(playerVehicle.position.z / GRID_SIZE);
+                const isRailwayTile = (gz_now % 4 === 0);
+
+                if (inIntersection && !isRailwayTile) {
+                    if (!intersectionProcessed && Math.abs(speed) > 0.1) {
+                        let isIllegal = (Math.abs(direction.z) > Math.abs(direction.x)) ? (trafficPhase >= 2) : (trafficPhase <= 2 || trafficPhase === 5);
+                        // 右左折中の救済
+                        if (isIllegal) {
+                            if ((trafficPhase === 0 || trafficPhase === 1) && Math.abs(direction.x) > 0.5) isIllegal = false;
+                            if ((trafficPhase === 3 || trafficPhase === 4) && Math.abs(direction.z) > 0.5) isIllegal = false;
+                        }
+
+                        if (isIllegal) {
+                            const alert = document.getElementById('center-alert');
+                            if (gameMode === 'BIKE') {
+                                fuel -= 20;
+                                alert.innerText = "🚨 信号無視！ -20 GAS";
+                                alert.style.color = "#ff0000";
+                            } else {
+                                alert.innerText = "🚨 信号を守ってください！";
+                                alert.style.color = "#ffaa00";
+                            }
+                            alert.style.display = 'block';
+                            setTimeout(() => { if (alert.innerText.includes("信号")) alert.style.display = 'none'; }, 2000);
+                        }
+                        intersectionProcessed = true;
+                    }
+                } else {
+                    intersectionProcessed = false;
+                }
+
+                // バイクモード限定の燃料消費
                 if (gameMode === 'BIKE') {
                     if (Math.abs(speed) > 0.01) fuel -= 0.01 + (Math.abs(speed) * 0.02);
                     if (fuel <= 0) endGame("ガス欠になりました");
@@ -860,27 +906,6 @@
                         document.getElementById('fuel-fill').style.background = '#ff0000';
                         if (!needsRefuel) setRandomTarget();
                     }
-
-                    const relX = ((playerVehicle.position.x % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
-                    const relZ = ((playerVehicle.position.z % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
-                    const inIntersection = (relX < 15 || relX > GRID_SIZE - 15) && (relZ < 15 || relZ > GRID_SIZE - 15);
-                    if (inIntersection && (Math.round(playerVehicle.position.z / GRID_SIZE) % 4 !== 0)) {
-                        if (!intersectionProcessed && Math.abs(speed) > 0.1) {
-                            let isIllegal = (Math.abs(direction.z) > Math.abs(direction.x)) ? (trafficPhase >= 2) : (trafficPhase <= 2 || trafficPhase === 5);
-                            if (isIllegal) {
-                                if ((trafficPhase === 0 || trafficPhase === 1) && Math.abs(direction.x) > 0.5) isIllegal = false;
-                                if ((trafficPhase === 3 || trafficPhase === 4) && Math.abs(direction.z) > 0.5) isIllegal = false;
-                            }
-                            if (isIllegal) {
-                                fuel -= 20;
-                                const alert = document.getElementById('center-alert');
-                                alert.innerText = "🚨 信号無視！ -20 GAS";
-                                alert.style.display = 'block';
-                                setTimeout(() => { if (alert.innerText.includes("信号無視")) alert.style.display = 'none'; }, 2000);
-                            }
-                            intersectionProcessed = true;
-                        }
-                    } else { intersectionProcessed = false; }
                 }
 
                 // 道路生成
