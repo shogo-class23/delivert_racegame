@@ -719,87 +719,105 @@
                     const gz = Math.round(c.mesh.position.z / GRID_SIZE);
                     const relX = c.mesh.position.x % GRID_SIZE;
                     const relZ = c.mesh.position.z % GRID_SIZE;
-                    // グリッド相対位置を 0〜GRID_SIZE に正規化 (負数対応)
+                    // グリッド相対位置を 0〜GRID_SIZE に正規化
                     const normX = (relX + GRID_SIZE) % GRID_SIZE;
                     const normZ = (relZ + GRID_SIZE) % GRID_SIZE;
 
                     const isNS = Math.abs(c.dir.z) > Math.abs(c.dir.x);
                     const isRailway = (gz % 4 === 0);
 
+                    // 交差点付近かどうか (30ユニット以内)
+                    const distToGridX = Math.min(normX, GRID_SIZE - normX);
+                    const distToGridZ = Math.min(normZ, GRID_SIZE - normZ);
+                    const nearIntersection = distToGridX < 30 && distToGridZ < 30;
+
                     let shouldStop = false;
-                    const stopDist = 18; // 交差点中心からの停止判定開始距離 (道路幅8 + 車長4 + マージン)
+                    const stopDist = 18; // 停止判定開始距離
                     
                     if (isNS) {
-                        // 南北走行: Z座標の変化
                         if (c.dir.z > 0) {
-                            // +Z方向: normZ が 120-stopDist 〜 120 の間なら停止線手前
                             if (normZ > GRID_SIZE - stopDist && normZ < GRID_SIZE - 5) {
                                 if (trafficPhase !== 0) shouldStop = true;
                             }
                         } else {
-                            // -Z方向: normZ が 5 〜 stopDist の間なら停止線手前
                             if (normZ < stopDist && normZ > 5) {
                                 if (trafficPhase !== 0) shouldStop = true;
                             }
                         }
                     } else {
-                        // 東西走行: X座標の変化
                         if (c.dir.x > 0) {
-                            // +X方向: normX が 120-stopDist 〜 120 の間
                             if (normX > GRID_SIZE - stopDist && normX < GRID_SIZE - 5) {
                                 if (trafficPhase !== 3) shouldStop = true;
                             }
                         } else {
-                            // -X方向: normX が 5 〜 stopDist の間
                             if (normX < stopDist && normX > 5) {
                                 if (trafficPhase !== 3) shouldStop = true;
                             }
                         }
                     }
                     
-                    // 踏切のチェック (Z軸方向のみ)
                     if (isRailway && isNS) {
                         const relZTrain = (c.mesh.position.z % (GRID_SIZE * 4) + (GRID_SIZE * 4)) % (GRID_SIZE * 4);
                         const cycle = trainTimer % 800;
                         const isTrainComing = (cycle > 500 || cycle < 100);
-                        
                         if (isTrainComing) {
-                            if (c.dir.z > 0 && relZTrain > (GRID_SIZE * 4) - stopDist && relZTrain < (GRID_SIZE * 4) - 5) {
-                                shouldStop = true;
-                            } else if (c.dir.z < 0 && relZTrain < stopDist && relZTrain > 5) {
-                                shouldStop = true;
-                            }
+                            if (c.dir.z > 0 && relZTrain > (GRID_SIZE * 4) - stopDist && relZTrain < (GRID_SIZE * 4) - 5) shouldStop = true;
+                            else if (c.dir.z < 0 && relZTrain < stopDist && relZTrain > 5) shouldStop = true;
                         }
                     }
 
-                    // 追い越しAIロジック
+                    // 追い越しAIロジックの改善
                     let needsOvertake = false;
                     const checkDist = 25;
-                    npcCars.forEach((other, oi) => {
-                        if (i === oi) return;
-                        const dist = c.mesh.position.distanceTo(other.mesh.position);
-                        if (dist < checkDist && other.speed < 0.1) {
-                            const relPos = other.mesh.position.clone().sub(c.mesh.position);
-                            if (relPos.dot(c.dir) > 0) needsOvertake = true;
+                    const rightVec = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), c.dir).normalize();
+
+                    // 交差点付近でなく、かつ自分が停止中・停止予定でない場合のみ追い越し検討
+                    if (!nearIntersection && !shouldStop && c.speed > 0.1) {
+                        npcCars.forEach((other, oi) => {
+                            if (i === oi) return;
+                            const dist = c.mesh.position.distanceTo(other.mesh.position);
+                            if (dist < checkDist) {
+                                const relPos = other.mesh.position.clone().sub(c.mesh.position);
+                                // 正面（ドット積が高い）に遅い車がいるか
+                                if (relPos.dot(c.dir) > 0.8 * dist && other.speed < c.targetSpeed * 0.7) {
+                                    needsOvertake = true;
+                                }
+                            }
+                        });
+                        if (c.mesh.position.distanceTo(cub.position) < checkDist) {
+                            const relPos = cub.position.clone().sub(c.mesh.position);
+                            if (relPos.dot(c.dir) > 0.8 * checkDist && Math.abs(speed) < 0.1) needsOvertake = true;
                         }
-                    });
-                    if (c.mesh.position.distanceTo(cub.position) < checkDist && Math.abs(speed) < 0.1) {
-                        const relPos = cub.position.clone().sub(c.mesh.position);
-                        if (relPos.dot(c.dir) > 0) needsOvertake = true;
                     }
 
-                    if (needsOvertake && !shouldStop) {
-                        // 必ず「右側」から追い越す
-                        // 左側通行なので、追い越し車線は常に進行方向の右手にある
-                        const rightVec = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), c.dir).normalize();
-                        // 進行方向の右側に寄せる
+                    // 無理な追い越し防止: 右側に車がいないかチェック
+                    if (needsOvertake) {
+                        const overtakePos = c.mesh.position.clone().add(rightVec.clone().multiplyScalar(6));
+                        npcCars.forEach((other, oi) => {
+                            if (i === oi) return;
+                            if (other.mesh.position.distanceTo(overtakePos) < 12) needsOvertake = false;
+                        });
+                    }
+
+                    // 車線維持・復帰ロジック
+                    const targetLaneOffset = isNS ? (c.dir.z > 0 ? 4 : -4) : (c.dir.x > 0 ? -4 : 4);
+                    let currentOffset = isNS ? (c.mesh.position.x - gx * GRID_SIZE) : (c.mesh.position.z - gz * GRID_SIZE);
+
+                    if (needsOvertake) {
                         c.mesh.position.add(rightVec.multiplyScalar(0.15));
+                    } else {
+                        // 徐々に元の車線に戻る
+                        const diff = targetLaneOffset - currentOffset;
+                        if (Math.abs(diff) > 0.1) {
+                            const returnDir = diff > 0 ? 1 : -1;
+                            if (isNS) c.mesh.position.x += returnDir * 0.08;
+                            else c.mesh.position.z += returnDir * 0.08;
+                        }
                     }
 
                     c.speed += ( (shouldStop ? 0 : c.targetSpeed) - c.speed) * 0.05;
                     c.mesh.position.add(c.dir.clone().multiplyScalar(c.speed));
 
-                    // プレイヤーとの衝突 (判定を緩和)
                     if (cub.position.distanceTo(c.mesh.position) < 3.2) {
                         endGame("一般車と衝突しました");
                     }
