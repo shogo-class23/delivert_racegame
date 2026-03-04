@@ -480,39 +480,46 @@
                     document.getElementById('fuel-fill').style.background = '#32cd32';
                 }
 
-                // 信号無視判定 (進入時のみチェック)
+                // 信号無視判定 (進入時のみ一回チェック)
                 const relX = Math.abs((cub.position.x + GRID_SIZE/2) % GRID_SIZE - GRID_SIZE/2);
                 const relZ = Math.abs((cub.position.z + GRID_SIZE/2) % GRID_SIZE - GRID_SIZE/2);
-                const inIntersection = relX < 15 && relZ < 15;
+                const inIntersection = relX < 18 && relZ < 18; // 判定範囲を少し広めて確実に捉える
 
                 if (inIntersection) {
                     if (!intersectionProcessed && Math.abs(speed) > 0.1) {
-                        // 進入した瞬間の向きで判定
+                        // 進入した瞬間の向きで「見るべき信号」を決める
                         const isMovingNS = Math.abs(direction.z) > Math.abs(direction.x);
                         let isLegal = false;
 
                         if (isMovingNS) {
-                            if (trafficPhase === 0) isLegal = true; // 南北が青ならOK
+                            // 南北走行中: フェーズ0(NS青)の時だけが合法
+                            if (trafficPhase === 0) isLegal = true;
                         } else {
-                            if (trafficPhase === 3) isLegal = true; // 東西が青ならOK
+                            // 東西走行中: フェーズ3(EW青)の時だけが合法
+                            if (trafficPhase === 3) isLegal = true;
                         }
 
                         if (!isLegal) {
                             fuel -= 20;
-                            // アラート表示
+                            // アラート表示の強化
                             const alert = document.getElementById('center-alert');
                             alert.innerText = "🚨 信号無視！ -20 GAS";
                             alert.style.display = 'block';
                             alert.style.animation = 'none';
-                            alert.offsetHeight; // reflow
+                            alert.offsetHeight; // reflowを発生させてアニメーションをリセット
                             alert.style.animation = null;
-                            setTimeout(() => { alert.style.display = 'none'; alert.innerText = "🚨 燃料不足！"; }, 2000);
+                            setTimeout(() => { 
+                                if (alert.innerText.includes("信号無視")) alert.style.display = 'none'; 
+                            }, 2000);
                         }
                         
-                        intersectionProcessed = true; // この交差点の判定は完了
+                        // この交差点での判定を「済」にする
+                        // これにより、中で曲がってもステータスが変わらなくなる
+                        intersectionProcessed = true; 
                     }
                 } else {
-                    intersectionProcessed = false; // 交差点を抜けたら次へ向けてリセット
+                    // 交差点を完全に抜けたらリセット
+                    intersectionProcessed = false;
                 }
 
                 const gx = Math.round(cub.position.x / GRID_SIZE);
