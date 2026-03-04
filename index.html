@@ -320,6 +320,7 @@
 
                 obstacles.forEach((obs, i) => {
                     if (cub.position.distanceTo(obs.position) < 1.1) endGame("障害物に激突しました");
+                });
                 // 当たり判定 (建物)
                 buildingMeshes.forEach(b => {
                     const dist = cub.position.distanceTo(b.pos);
