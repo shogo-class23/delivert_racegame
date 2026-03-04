@@ -124,6 +124,10 @@
         let trafficPhase = 0; // 0:NS青, 1:NS黄, 2:全赤, 3:EW青, 4:EW黄, 5:全赤
         let trafficTimer = 0;
         let trafficLights = []; 
+
+        // --- 電車管理 ---
+        const trains = []; // { mesh, lineGZ }
+        let trainTimer = 0;
         
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -276,6 +280,29 @@
             return group;
         }
 
+        function createTrain() {
+            const group = new THREE.Group();
+            // 先頭車両から数両分
+            for(let i=0; i<8; i++) {
+                const car = new THREE.Mesh(
+                    new THREE.BoxGeometry(20, 6, 6),
+                    new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8, roughness: 0.2 })
+                );
+                car.position.x = i * 22;
+                // 窓
+                const winGeo = new THREE.BoxGeometry(2, 1.5, 6.2);
+                const winMat = new THREE.MeshBasicMaterial({ color: 0x88ffff });
+                for(let j=-4; j<=4; j++) {
+                    const w = new THREE.Mesh(winGeo, winMat);
+                    w.position.set(j*2, 1, 0);
+                    car.add(w);
+                }
+                group.add(car);
+            }
+            scene.add(group);
+            return group;
+        }
+
         function createRoadTile(gx, gz) {
             const group = new THREE.Group();
             group.isRoad = true;
@@ -283,10 +310,32 @@
             
             const grass = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE), new THREE.MeshStandardMaterial({ color: 0x3d7a35 }));
             grass.rotation.x = -Math.PI/2; grass.position.y = -0.02; group.add(grass);
+            
             const roadV = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, GRID_SIZE), new THREE.MeshStandardMaterial({ color: 0x333333 }));
             roadV.rotation.x = -Math.PI/2; group.add(roadV);
-            const roadH = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, ROAD_WIDTH), new THREE.MeshStandardMaterial({ color: 0x333333 }));
-            roadH.rotation.x = -Math.PI/2; group.add(roadH);
+
+            // 4ブロックごとに東西方向を線路にする
+            const isRailway = (gz % 4 === 0);
+            if (isRailway) {
+                // 線路の砂利
+                const ballast = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, 10), new THREE.MeshStandardMaterial({ color: 0x555555 }));
+                ballast.rotation.x = -Math.PI/2; ballast.position.y = 0.01; group.add(ballast);
+                // レール
+                const railGeo = new THREE.BoxGeometry(GRID_SIZE, 0.3, 0.3);
+                const railMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 1 });
+                const r1 = new THREE.Mesh(railGeo, railMat); r1.position.set(0, 0.4, -2); group.add(r1);
+                const r2 = new THREE.Mesh(railGeo, railMat); r2.position.set(0, 0.4, 2); group.add(r2);
+                // 枕木
+                const sleeperGeo = new THREE.BoxGeometry(0.5, 0.2, 6);
+                const sleeperMat = new THREE.MeshStandardMaterial({ color: 0x442200 });
+                for(let i=-10; i<=10; i++) {
+                    const s = new THREE.Mesh(sleeperGeo, sleeperMat);
+                    s.position.set(i * 6, 0.2, 0); group.add(s);
+                }
+            } else {
+                const roadH = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, ROAD_WIDTH), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+                roadH.rotation.x = -Math.PI/2; group.add(roadH);
+            }
 
             // 信号機の配置 (四隅)
             const offset = 9;
@@ -438,6 +487,39 @@
                     });
                 };
                 updateLights();
+
+                // 電車のアニメーション
+                trainTimer++;
+                if (trainTimer % 600 === 0) { // 定期的に電車を走らせる
+                    const lineGZ = Math.round(cub.position.z / (GRID_SIZE * 4)) * 4;
+                    const train = createTrain();
+                    train.position.set(-1000, 3, lineGZ * GRID_SIZE);
+                    trains.push({ mesh: train, lineGZ: lineGZ });
+                    
+                    // アラート表示 (電車が来る前の警告)
+                    if (Math.abs(cub.position.z - lineGZ * GRID_SIZE) < 150) {
+                        const alert = document.getElementById('center-alert');
+                        alert.innerText = "⚠️ 踏切注意！電車通過";
+                        alert.style.display = 'block';
+                        setTimeout(() => { if (alert.innerText.includes("踏切")) alert.style.display = 'none'; }, 2000);
+                    }
+                }
+
+                trains.forEach((t, i) => {
+                    t.mesh.position.x += 10; // 電車のスピード
+                    // 電車との衝突判定
+                    const distToTrain = cub.position.distanceTo(t.mesh.position);
+                    // 電車は長いので、x座標の範囲でチェック
+                    const relX = cub.position.x - t.mesh.position.x;
+                    if (Math.abs(cub.position.z - t.mesh.position.z) < 6 && relX > 0 && relX < 200) {
+                        endGame("電車に撥ねられました");
+                    }
+                    // 遠くへ行ったら削除
+                    if (t.mesh.position.x > 1000) {
+                        scene.remove(t.mesh);
+                        trains.splice(i, 1);
+                    }
+                });
 
                 // アクセル・ブレーキ
                 if (keys['KeyW'] || keys['ArrowUp']) {
