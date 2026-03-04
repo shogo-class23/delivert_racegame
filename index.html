@@ -136,7 +136,10 @@
         function setRandomTarget() {
             targetGX = Math.round((cub.position.x / GRID_SIZE) + (Math.random() > 0.5 ? 2 : -2));
             targetGZ = Math.round((cub.position.z / GRID_SIZE) + (Math.random() > 0.5 ? 2 : -2));
-            targetPos.set(targetGX * GRID_SIZE, 0, targetGZ * GRID_SIZE);
+            
+            // 道路の真ん中ではなく、角の建物の位置（-bOffset）にターゲットを設定
+            const bOffset = 40; 
+            targetPos.set(targetGX * GRID_SIZE - bOffset, 0, targetGZ * GRID_SIZE - bOffset);
             marker.position.copy(targetPos);
             
             if (missionState === 'PICKUP') {
@@ -253,7 +256,7 @@
         window.addEventListener('keyup', e => keys[e.code] = false);
 
         function checkInteraction() {
-            if (cub.position.distanceTo(targetPos) < 15 && Math.abs(speed) < 0.1) {
+            if (cub.position.distanceTo(targetPos) < 20 && Math.abs(speed) < 0.1) {
                 if (missionState === 'PICKUP') {
                     missionState = 'DELIVERY'; cub.cargo.visible = true; setRandomTarget();
                 } else {
@@ -306,7 +309,7 @@
                 if (nitroTimer > 0) { nitroTimer--; document.getElementById('nitro-fill').style.width = (nitroTimer/300*100)+'%'; }
                 
                 const distToTarget = cub.position.distanceTo(targetPos);
-                document.getElementById('interact-prompt').style.display = (distToTarget < 15 && Math.abs(speed) < 0.1) ? 'block' : 'none';
+                document.getElementById('interact-prompt').style.display = (distToTarget < 20 && Math.abs(speed) < 0.1) ? 'block' : 'none';
 
                 camera.position.lerp(cub.position.clone().add(new THREE.Vector3(0, 5, 12).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY)), 0.1);
                 camera.lookAt(cub.position.x, 1, cub.position.z);
