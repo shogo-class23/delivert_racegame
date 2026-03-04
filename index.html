@@ -632,56 +632,91 @@
                     carSpawnTimer = 0;
                     const car = createCar();
                     const isNS = Math.random() > 0.5;
-                    const dist = 150;
+                    const dist = 160;
                     const spawnOffset = (Math.random() > 0.5 ? 1 : -1) * dist;
-                    const laneOffset = (Math.random() > 0.5 ? 4 : -4); // 左車線か右車線
+                    
+                    const moveDir = Math.random() > 0.5 ? 1 : -1; // 1: 正方向, -1: 負方向
 
                     let pos = new THREE.Vector3();
                     let dir = new THREE.Vector3();
                     if (isNS) {
                         const gx = Math.round(cub.position.x / GRID_SIZE);
-                        pos.set(gx * GRID_SIZE + laneOffset, 0, cub.position.z + spawnOffset);
-                        dir.set(0, 0, spawnOffset > 0 ? -1 : 1);
-                        car.rotation.y = spawnOffset > 0 ? 0 : Math.PI;
+                        dir.set(0, 0, moveDir);
+                        // 左側通行: +ZならX=4, -ZならX=-4
+                        const laneX = moveDir * 4;
+                        pos.set(gx * GRID_SIZE + laneX, 0, cub.position.z + spawnOffset);
+                        car.rotation.y = moveDir > 0 ? 0 : Math.PI;
                     } else {
                         const gz = Math.round(cub.position.z / GRID_SIZE);
-                        pos.set(cub.position.x + spawnOffset, 0, gz * GRID_SIZE + laneOffset);
-                        dir.set(spawnOffset > 0 ? -1 : 1, 0, 0);
-                        car.rotation.y = spawnOffset > 0 ? Math.PI/2 : -Math.PI/2;
+                        // 線路 (gz % 4 === 0) には車を出現させない
+                        if (gz % 4 === 0) {
+                            scene.remove(car);
+                        } else {
+                            dir.set(moveDir, 0, 0);
+                            // 左側通行: +XならZ=-4, -XならZ=4
+                            const laneZ = -moveDir * 4;
+                            pos.set(cub.position.x + spawnOffset, 0, gz * GRID_SIZE + laneZ);
+                            car.rotation.y = moveDir > 0 ? Math.PI/2 : -Math.PI/2;
+                            car.position.copy(pos);
+                            npcCars.push({ mesh: car, dir: dir, speed: 0, targetSpeed: 0.3 + Math.random() * 0.3 });
+                        }
                     }
-                    car.position.copy(pos);
-                    npcCars.push({ mesh: car, dir: dir, speed: 0, targetSpeed: 0.4 + Math.random() * 0.3 });
                 }
 
                 npcCars.forEach((c, i) => {
                     // 信号と踏切のチェック
-                    const gx = Math.round(c.mesh.position.x / GRID_SIZE);
-                    const gz = Math.round(c.mesh.position.z / GRID_SIZE);
                     const relX = Math.abs(c.mesh.position.x % GRID_SIZE);
                     const relZ = Math.abs(c.mesh.position.z % GRID_SIZE);
-                    const inIntersection = (relX < 15 || relX > GRID_SIZE - 15) && (relZ < 15 || relZ > GRID_SIZE - 15);
-                    const isRailway = (gz % 4 === 0);
+                    const nearIntersection = (relX < 20 || relX > GRID_SIZE - 20) && (relZ < 20 || relZ > GRID_SIZE - 20);
+                    const isRailway = (Math.round(c.mesh.position.z / GRID_SIZE) % 4 === 0);
 
                     let shouldStop = false;
-                    if (inIntersection) {
+                    if (nearIntersection) {
                         const isNS = Math.abs(c.dir.z) > Math.abs(c.dir.x);
                         if (isNS && trafficPhase !== 0) shouldStop = true;
                         if (!isNS && trafficPhase !== 3) shouldStop = true;
                     }
-                    if (isRailway && Math.abs(c.mesh.position.z % (GRID_SIZE*4)) < 15) {
-                        const cycle = trainTimer % 800;
-                        if (cycle > 500 || cycle < 100) shouldStop = true; // 踏切が閉まっている間
+                    
+                    if (isRailway) {
+                        const relZTrain = Math.abs(c.mesh.position.z % (GRID_SIZE * 4));
+                        if (relZTrain < 20 || relZTrain > (GRID_SIZE * 4) - 20) {
+                            const cycle = trainTimer % 800;
+                            if (cycle > 500 || cycle < 100) shouldStop = true;
+                        }
+                    }
+
+                    // 追い越しAIロジック
+                    let needsOvertake = false;
+                    const checkDist = 25;
+                    npcCars.forEach((other, oi) => {
+                        if (i === oi) return;
+                        const dist = c.mesh.position.distanceTo(other.mesh.position);
+                        if (dist < checkDist && other.speed < 0.1) {
+                            const relPos = other.mesh.position.clone().sub(c.mesh.position);
+                            if (relPos.dot(c.dir) > 0) needsOvertake = true;
+                        }
+                    });
+                    if (c.mesh.position.distanceTo(cub.position) < checkDist && Math.abs(speed) < 0.1) {
+                        const relPos = cub.position.clone().sub(c.mesh.position);
+                        if (relPos.dot(c.dir) > 0) needsOvertake = true;
+                    }
+
+                    if (needsOvertake && !shouldStop) {
+                        // 必ず「右側」から追い越す
+                        // 左側通行なので、追い越し車線は常に進行方向の右手にある
+                        const rightVec = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), c.dir).normalize();
+                        // 進行方向の右側に寄せる
+                        c.mesh.position.add(rightVec.multiplyScalar(0.15));
                     }
 
                     c.speed += ( (shouldStop ? 0 : c.targetSpeed) - c.speed) * 0.05;
                     c.mesh.position.add(c.dir.clone().multiplyScalar(c.speed));
 
-                    // プレイヤーとの衝突
-                    if (cub.position.distanceTo(c.mesh.position) < 4) {
+                    // プレイヤーとの衝突 (判定を緩和)
+                    if (cub.position.distanceTo(c.mesh.position) < 3.2) {
                         endGame("一般車と衝突しました");
                     }
 
-                    // 遠くへ行ったら削除
                     if (cub.position.distanceTo(c.mesh.position) > 200) {
                         scene.remove(c.mesh);
                         npcCars.splice(i, 1);
@@ -744,10 +779,8 @@
                         let isIllegal = false;
 
                         if (isMovingNS) {
-                            // 南北走行中: 青(0)か黄(1)ならOK。それ以外(2,3,4,5)は赤系なのでダメ。
                             if (trafficPhase >= 2) isIllegal = true;
                         } else {
-                            // 東西走行中: 青(3)か黄(4)ならOK。それ以外(5,0,1,2)は赤系なのでダメ。
                             if (trafficPhase <= 2 || trafficPhase === 5) isIllegal = true;
                         }
 
@@ -790,34 +823,26 @@
                 camera.position.lerp(cub.position.clone().add(new THREE.Vector3(0, 7, 15).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY)), 0.1);
                 camera.lookAt(cub.position.x, 1.5, cub.position.z);
 
-                // 当たり判定 (建物)
                 buildingMeshes.forEach(b => {
                     const dist = cub.position.distanceTo(b.pos);
-
-                    // 無敵中の建物から離れたら無敵解除
                     if (immuneBuilding && cub.position.distanceTo(immuneBuilding) > 35) {
                         immuneBuilding = null;
                     }
-
-                    // 無敵中の建物（今アクションした場所）は無視する
                     if (immuneBuilding && b.pos.distanceTo(immuneBuilding) < 1) {
                         return;
                     }
-
                     if (Math.abs(cub.position.x - b.pos.x) < b.size/2+1.2 && Math.abs(cub.position.z - b.pos.z) < b.size/2+1.2) {
                         if (!b.isTarget) endGame("建物に衝突しました");
                     }
                 });
 
                 ring.rotation.z += 0.05;
-
-                // 3Dガイドラインの更新
                 const points = [
                     cub.position.clone().add(new THREE.Vector3(0, 0.5, 0)),
                     targetPos.clone().add(new THREE.Vector3(0, 0.5, 0))
                 ];
                 navLine.geometry.setFromPoints(points);
-                navLine.computeLineDistances(); // 点線を描画するために必要
+                navLine.computeLineDistances(); 
             }
             updateMap();
             renderer.render(scene, camera);
