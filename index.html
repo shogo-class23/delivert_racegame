@@ -24,6 +24,20 @@
             background: gold; color: #000; padding: 10px 20px; border-radius: 10px;
             font-size: 24px; font-weight: bold; display: none; animation: pulse 1s infinite;
         }
+        
+        #center-alert {
+            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            color: #ff0000; font-size: 60px; font-weight: bold; text-align: center;
+            text-shadow: 0 0 20px rgba(255,0,0,0.8);
+            pointer-events: none; display: none; z-index: 200;
+            animation: alert-anim 2s forwards;
+        }
+        @keyframes alert-anim {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+            20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+            80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(1.2); }
+        }
         @keyframes pulse { 0% { transform: translateX(-50%) scale(1); } 50% { transform: translateX(-50%) scale(1.1); } 100% { transform: translateX(-50%) scale(1); } }
 
         #map-container {
@@ -52,6 +66,7 @@
         <div id="mission-text">お店を探せ！</div>
         <div id="distance-text" style="font-size: 28px; color: #fff; margin-top: 5px;">あと ---m</div>
     </div>
+    <div id="center-alert">🚨 燃料不足！</div>
     <div id="interact-prompt">E キーでアクション！</div>
 
     <div id="map-container">
@@ -145,12 +160,20 @@
         scene.add(marker);
 
         function setRandomTarget() {
+            let spawnDist = 2; // 通常ミッションの距離
+
             if (fuel < 30 && missionState !== 'REFUEL') {
                 missionState = 'REFUEL';
+                spawnDist = 1; // ガソスタは近く（1ブロック先）に配置
+                
+                // 中央アラート表示
+                const alert = document.getElementById('center-alert');
+                alert.style.display = 'block';
+                setTimeout(() => { alert.style.display = 'none'; }, 2000);
             }
 
-            targetGX = Math.round((cub.position.x / GRID_SIZE) + (Math.random() > 0.5 ? 2 : -2));
-            targetGZ = Math.round((cub.position.z / GRID_SIZE) + (Math.random() > 0.5 ? 2 : -2));
+            targetGX = Math.round((cub.position.x / GRID_SIZE) + (Math.random() > 0.5 ? spawnDist : -spawnDist));
+            targetGZ = Math.round((cub.position.z / GRID_SIZE) + (Math.random() > 0.5 ? spawnDist : -spawnDist));
             
             const bOffset = 40; 
             targetPos.set(targetGX * GRID_SIZE - bOffset, 0, targetGZ * GRID_SIZE - bOffset);
