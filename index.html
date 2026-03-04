@@ -338,6 +338,7 @@
                     stripe.position.x = -side * (i * 2 + 1);
                     barGroup.add(stripe);
                 }
+                barGroup.rotation.z = Math.PI / 2; // 最初は上がっている状態
                 pGroup.add(barGroup);
 
                 group.add(pGroup);
@@ -379,12 +380,14 @@
                 roadH.rotation.x = -Math.PI/2; group.add(roadH);
             }
 
-            // 信号機の配置 (四隅)
-            const offset = 9;
-            group.add(createTrafficLight(-offset, -offset));
-            group.add(createTrafficLight(offset, -offset));
-            group.add(createTrafficLight(offset, offset));
-            group.add(createTrafficLight(-offset, offset));
+            // 信号機の配置 (四隅 - 線路でない場合のみ)
+            if (!isRailway) {
+                const offset = 9;
+                group.add(createTrafficLight(-offset, -offset));
+                group.add(createTrafficLight(offset, -offset));
+                group.add(createTrafficLight(offset, offset));
+                group.add(createTrafficLight(-offset, offset));
+            }
 
             // 建物
             const bSize = 30; const bOffset = 40;
@@ -543,8 +546,8 @@
                         crossingGates.splice(i, 1); continue;
                     }
 
-                    // 遮断機の開閉
-                    const targetRot = isTrainApproaching || isTrainPassing ? Math.PI / 2 : 0;
+                    // 遮断機の開閉 (逆転修正: 接近時は 0[下], 通常時は PI/2[上])
+                    const targetRot = isTrainApproaching || isTrainPassing ? 0 : Math.PI / 2;
                     g.barGroup.rotation.z += (targetRot - g.barGroup.rotation.z) * 0.05;
 
                     // 警告灯の点滅
@@ -557,8 +560,8 @@
                         g.lights[1].material.color.set(0x330000);
                     }
 
-                    // 遮断機への衝突判定 (閉じている時のみ)
-                    if (g.barGroup.rotation.z > 1.0) {
+                    // 遮断機への衝突判定 (降りている[0付近]時のみ)
+                    if (g.barGroup.rotation.z < 0.5) {
                         const gateWorldPos = new THREE.Vector3();
                         g.barGroup.getWorldPosition(gateWorldPos);
                         if (Math.abs(cub.position.x - gateWorldPos.x) < 8 && Math.abs(cub.position.z - gateWorldPos.z) < 2) {
