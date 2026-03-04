@@ -346,9 +346,9 @@
                 cub.position.add(direction.clone().multiplyScalar(speed));
                 cub.rotation.y = currentRotationY;
 
-                // 燃料消費
+                // 燃料消費 (消費スピードを大幅に緩和)
                 if (Math.abs(speed) > 0.01) {
-                    fuel -= 0.03 + (Math.abs(speed) * 0.05); // 速いほど減る
+                    fuel -= 0.01 + (Math.abs(speed) * 0.02); 
                 }
                 if (fuel <= 0) {
                     fuel = 0;
