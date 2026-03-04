@@ -11,6 +11,7 @@
         #nitro-bar { width: 200px; height: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; margin-top: 5px; overflow: hidden; }
         #nitro-fill { width: 0%; height: 100%; background: #ff4500; transition: width 0.1s; }
         
+        #fuel-ui { display: block; }
         #fuel-container { width: 200px; height: 15px; background: rgba(0,0,0,0.5); border-radius: 5px; margin-top: 5px; overflow: hidden; border: 1px solid #fff; }
         #fuel-fill { width: 100%; height: 100%; background: #32cd32; transition: width 0.3s; }
         
@@ -47,7 +48,11 @@
         #map-canvas { width: 100%; height: 100%; }
 
         #start-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 100; }
-        #start-button { padding: 15px 40px; font-size: 24px; background: #ff4500; border: none; border-radius: 30px; color: white; cursor: pointer; }
+        .start-button { padding: 15px 40px; font-size: 24px; border: none; border-radius: 30px; color: white; cursor: pointer; margin: 10px; width: 300px; transition: transform 0.2s; }
+        .start-button:hover { transform: scale(1.05); }
+        #bike-btn { background: #ff4500; border: 3px solid #fff; }
+        #bus-btn { background: #0044aa; border: 3px solid #00ffff; }
+
         #game-over { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,0,0,0.6); display: none; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 101; }
     </style>
 </head>
@@ -56,14 +61,16 @@
         <div id="speed">時速: 0 km/h</div>
         <div id="nitro-label">激辛ニトロ</div>
         <div id="nitro-bar"><div id="nitro-fill"></div></div>
-        <div id="fuel-label" style="margin-top: 10px;">燃料 (GAS)</div>
-        <div id="fuel-container"><div id="fuel-fill"></div></div>
+        <div id="fuel-ui">
+            <div id="fuel-label" style="margin-top: 10px;">燃料 (GAS)</div>
+            <div id="fuel-container"><div id="fuel-fill"></div></div>
+        </div>
         <div id="score" style="margin-top: 10px; font-size: 18px;">配達距離: 0m</div>
         <div id="deliv-count" style="margin-top: 5px; font-size: 20px; color: gold;">完了数: 0</div>
     </div>
 
     <div id="mission-ui">
-        <div id="mission-text">お店を探せ！</div>
+        <div id="mission-text">出発進行！</div>
         <div id="distance-text" style="font-size: 28px; color: #fff; margin-top: 5px;">あと ---m</div>
     </div>
     <div id="center-alert">🚨 燃料不足！</div>
@@ -75,16 +82,20 @@
     </div>
 
     <div id="start-screen">
-        <h1 style="font-size: 48px; margin-bottom: 10px;">爆走！激走デリバリー</h1>
-        <p style="margin-bottom: 20px;">W:アクセル S:ブレーキ A/D:ハンドル E:アクション</p>
-        <button id="start-button">配達開始！</button>
+        <h1 style="font-size: 48px; margin-bottom: 5px;">爆走！デリバリー ＆ バス</h1>
+        <p style="margin-bottom: 25px;">W:アクセル S:ブレーキ A/D:ハンドル E:停車/アクション</p>
+        <button id="bike-btn" class="start-button">🛵 バイクモード（激走配達）</button>
+        <button id="bus-btn" class="start-button">🚌 バスモード（安全運行）</button>
     </div>
 
     <div id="game-over">
-        <h1 style="font-size: 64px;">事故発生！</h1>
-        <p id="cause" style="font-size: 20px; margin-bottom: 10px; color: #ffaaaa;"></p>
-        <p id="final-score" style="font-size: 24px;"></p>
-        <button onclick="location.reload()" style="margin-top:20px; padding:10px 20px; font-size:18px;">リトライ</button>
+        <h1 style="font-size: 64px; margin-bottom: 10px;">事故発生！</h1>
+        <p id="cause" style="font-size: 20px; margin-bottom: 20px; color: #ffaaaa;"></p>
+        <p id="final-score" style="font-size: 28px; margin-bottom: 30px;"></p>
+        <div style="display: flex; gap: 20px;">
+            <button id="retry-btn" class="start-button" style="width: 220px; background: #ff4500; border: 3px solid #fff;">もう一度挑戦</button>
+            <button onclick="location.reload()" class="start-button" style="width: 220px; background: #555; border: 3px solid #ccc;">ホームへ戻る</button>
+        </div>
     </div>
 
     <script type="importmap">
@@ -106,6 +117,7 @@
         const STEER_SPEED = 0.04;
         
         let gameState = 'START';
+        let gameMode = 'BIKE'; // 'BIKE' or 'BUS'
         let missionState = 'PICKUP'; 
         let speed = 0;
         let nitroTimer = 0;
@@ -121,13 +133,13 @@
         let targetGX = 0, targetGZ = 0;
         let fuelTargetPos = new THREE.Vector3();
         let fuelTargetGX = 0, fuelTargetGZ = 0;
-        let needsRefuel = false; // ガソスタミッションがアクティブか
+        let needsRefuel = false; 
         
         let immuneBuilding = null; 
         let navLine, fuelNavLine; 
 
         // --- 信号機管理 ---
-        let trafficPhase = 0; // 0:NS青, 1:NS黄, 2:全赤, 3:EW青, 4:EW黄, 5:全赤
+        let trafficPhase = 0; 
         let trafficTimer = 0;
         let trafficLights = []; 
 
@@ -137,7 +149,7 @@
         const crossingGates = []; 
 
         // --- 一般車 (NPC) 管理 ---
-        const npcCars = []; // { mesh, direction, speed, targetSpeed, laneX, laneZ }
+        const npcCars = []; 
         let carSpawnTimer = 0;
         
         const scene = new THREE.Scene();
@@ -155,7 +167,7 @@
         sun.position.set(100, 200, 100); sun.castShadow = true;
         scene.add(sun);
 
-        // --- バイク ---
+        // --- 乗り物作成 ---
         function createCub() {
             const group = new THREE.Group();
             const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 1.5), new THREE.MeshStandardMaterial({ color: 0x0055aa }));
@@ -169,10 +181,56 @@
             const back = front.clone(); back.position.set(0, 0.35, -0.8); group.add(back);
             return group;
         }
-        const cub = createCub();
-        cub.scale.set(1.8, 1.8, 1.8);
-        cub.position.set(-4, 0, 40); // 左車線に寄せて開始
-        scene.add(cub);
+
+        function createBus() {
+            const group = new THREE.Group();
+            // ボディ (青いバス)
+            const body = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 8), new THREE.MeshStandardMaterial({ color: 0x0044aa }));
+            body.position.y = 1.5; group.add(body);
+            // 窓
+            const winGeo = new THREE.BoxGeometry(2.6, 1.2, 7.5);
+            const winMat = new THREE.MeshBasicMaterial({ color: 0x88ffff, transparent: true, opacity: 0.6 });
+            const win = new THREE.Mesh(winGeo, winMat);
+            win.position.y = 2.0; group.add(win);
+            // タイヤ (6輪)
+            const wheelGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.5, 16);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+            [[-1, 0, 3], [1, 0, 3], [-1, 0, -2], [1, 0, -2], [-1, 0, -3.5], [1, 0, -3.5]].forEach(([x,y,z]) => {
+                const w = new THREE.Mesh(wheelGeo, wheelMat);
+                w.rotation.z = Math.PI/2; w.position.set(x * 1.2, 0.6, z); group.add(w);
+            });
+            return group;
+        }
+
+        let playerVehicle;
+        function setupVehicle(mode) {
+            if (playerVehicle) scene.remove(playerVehicle);
+            if (mode === 'BIKE') {
+                playerVehicle = createCub();
+                playerVehicle.scale.set(1.8, 1.8, 1.8);
+            } else {
+                playerVehicle = createBus();
+                playerVehicle.scale.set(1.2, 1.2, 1.2);
+            }
+            playerVehicle.position.set(-4, 0, 40);
+            scene.add(playerVehicle);
+        }
+
+        // --- バス停作成 ---
+        function createBusStop() {
+            const group = new THREE.Group();
+            // 標識
+            const pole = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4, 0.2), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+            pole.position.y = 2; group.add(pole);
+            const sign = new THREE.Mesh(new THREE.CircleGeometry(0.6, 16), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+            sign.position.y = 3.8; sign.position.z = 0.1; group.add(sign);
+            const inner = new THREE.Mesh(new THREE.CircleGeometry(0.5, 16), new THREE.MeshStandardMaterial({ color: 0x0044aa }));
+            inner.position.y = 3.8; inner.position.z = 0.11; group.add(inner);
+            return group;
+        }
+        const busStopModel = createBusStop();
+        busStopModel.visible = false;
+        scene.add(busStopModel);
 
         // --- 3Dガイドラインの初期化 ---
         const navLineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
@@ -203,15 +261,14 @@
         function setRandomTarget(isFuelOnly = false) {
             let spawnDist = 2; 
 
-            if (fuel < 30 && !needsRefuel) {
+            if (gameMode === 'BIKE' && fuel < 30 && !needsRefuel) {
                 needsRefuel = true;
                 const alert = document.getElementById('center-alert');
                 alert.style.display = 'block';
                 setTimeout(() => { alert.style.display = 'none'; }, 2000);
                 
-                // ガソスタの位置を決める (現在の位置から1ブロック先)
-                fuelTargetGX = Math.round((cub.position.x / GRID_SIZE) + (Math.random() > 0.5 ? 1 : -1));
-                fuelTargetGZ = Math.round((cub.position.z / GRID_SIZE) + (Math.random() > 0.5 ? 1 : -1));
+                fuelTargetGX = Math.round((playerVehicle.position.x / GRID_SIZE) + (Math.random() > 0.5 ? 1 : -1));
+                fuelTargetGZ = Math.round((playerVehicle.position.z / GRID_SIZE) + (Math.random() > 0.5 ? 1 : -1));
                 fuelTargetPos.set(fuelTargetGX * GRID_SIZE - 40, 0, fuelTargetGZ * GRID_SIZE - 40);
                 fuelMarker.position.copy(fuelTargetPos);
                 fuelMarker.visible = true;
@@ -219,28 +276,39 @@
             }
 
             if (!isFuelOnly) {
-                // 通常のターゲット生成
-                targetGX = Math.round((cub.position.x / GRID_SIZE) + (Math.random() > 0.5 ? spawnDist : -spawnDist));
-                targetGZ = Math.round((cub.position.z / GRID_SIZE) + (Math.random() > 0.5 ? spawnDist : -spawnDist));
-                targetPos.set(targetGX * GRID_SIZE - 40, 0, targetGZ * GRID_SIZE - 40);
+                targetGX = Math.round((playerVehicle.position.x / GRID_SIZE) + (Math.random() > 0.5 ? spawnDist : -spawnDist));
+                targetGZ = Math.round((playerVehicle.position.z / GRID_SIZE) + (Math.random() > 0.5 ? spawnDist : -spawnDist));
+                
+                if (gameMode === 'BIKE') {
+                    targetPos.set(targetGX * GRID_SIZE - 40, 0, targetGZ * GRID_SIZE - 40);
+                } else {
+                    // バス停は交差点の少し手前の道路脇に設置
+                    targetPos.set(targetGX * GRID_SIZE - 8, 0, targetGZ * GRID_SIZE - 20);
+                    busStopModel.position.copy(targetPos);
+                    busStopModel.visible = true;
+                }
                 marker.position.copy(targetPos);
             }
             
             // UI更新
-            if (missionState === 'PICKUP') {
-                beam.material.color.set(0xffff00); ring.material.color.set(0xffff00);
-                navLine.material.color.set(0xffff00);
-                document.getElementById('mission-text').innerText = "お店（黄色の建物）へ荷物を取りに行け！";
-                document.getElementById('mission-ui').style.color = "gold";
-            } else if (missionState === 'DELIVERY') {
+            if (gameMode === 'BIKE') {
+                if (missionState === 'PICKUP') {
+                    beam.material.color.set(0xffff00); ring.material.color.set(0xffff00);
+                    navLine.material.color.set(0xffff00);
+                    document.getElementById('mission-text').innerText = "お店（黄色の建物）へ荷物を取りに行け！";
+                    document.getElementById('mission-ui').style.color = "gold";
+                } else {
+                    beam.material.color.set(0x00ffff); ring.material.color.set(0x00ffff);
+                    navLine.material.color.set(0x00ffff);
+                    document.getElementById('mission-text').innerText = "お届け先（青色の家）へ配達せよ！";
+                    document.getElementById('mission-ui').style.color = "#00ffff";
+                }
+                if (needsRefuel) document.getElementById('mission-text').innerText += "\n⛽ 同時に給油（緑色）も必要だ！";
+            } else {
                 beam.material.color.set(0x00ffff); ring.material.color.set(0x00ffff);
                 navLine.material.color.set(0x00ffff);
-                document.getElementById('mission-text').innerText = "お届け先（青色の家）へ配達せよ！";
+                document.getElementById('mission-text').innerText = "次のバス停（青い光）へ向かえ！";
                 document.getElementById('mission-ui').style.color = "#00ffff";
-            }
-            
-            if (needsRefuel) {
-                document.getElementById('mission-text').innerText += "\n⛽ 同時に給油（緑色）も必要だ！";
             }
 
             roads.clear();
@@ -481,28 +549,30 @@
         const mapCtx = mapCanvas.getContext('2d');
         mapCanvas.width = 250; mapCanvas.height = 250;
         function updateMap() {
+            if (!playerVehicle) return;
             mapCtx.clearRect(0,0,250,250);
             mapCtx.fillStyle = 'rgba(0, 20, 0, 0.8)'; mapCtx.fillRect(0,0,250,250);
             const cx=125, cz=125, mapScale = 0.4;
             mapCtx.save(); mapCtx.translate(cx, cz); mapCtx.rotate(-currentRotationY);
             mapCtx.strokeStyle = '#004400';
             for(let x=-2; x<=2; x++) {
-                const lx = (Math.round(cub.position.x/GRID_SIZE) + x) * GRID_SIZE - cub.position.x;
+                const lx = (Math.round(playerVehicle.position.x/GRID_SIZE) + x) * GRID_SIZE - playerVehicle.position.x;
                 mapCtx.beginPath(); mapCtx.moveTo(lx * mapScale, -125); mapCtx.lineTo(lx * mapScale, 125); mapCtx.stroke();
             }
             for(let z=-2; z<=2; z++) {
-                const lz = (Math.round(cub.position.z/GRID_SIZE) + z) * GRID_SIZE - cub.position.z;
+                const lz = (Math.round(playerVehicle.position.z/GRID_SIZE) + z) * GRID_SIZE - playerVehicle.position.z;
                 mapCtx.beginPath(); mapCtx.moveTo(-125, lz * mapScale); mapCtx.lineTo(125, lz * mapScale); mapCtx.stroke();
             }
             
             // ターゲット表示ロジック
             const drawTargetIcon = (tx_val, tz_val, type) => {
-                const tx = (tx_val - cub.position.x) * mapScale;
-                const tz = (tz_val - cub.position.z) * mapScale;
+                const tx = (tx_val - playerVehicle.position.x) * mapScale;
+                const tz = (tz_val - playerVehicle.position.z) * mapScale;
                 
                 if (type === 'PICKUP') mapCtx.fillStyle = 'gold';
                 else if (type === 'DELIVERY') mapCtx.fillStyle = '#0ff';
                 else if (type === 'REFUEL') mapCtx.fillStyle = '#32cd32';
+                else if (type === 'BUSSTOP') mapCtx.fillStyle = '#00ffff';
                 
                 mapCtx.shadowBlur = 15;
                 mapCtx.shadowColor = mapCtx.fillStyle;
@@ -515,12 +585,12 @@
                 mapCtx.shadowBlur = 0;
             };
 
-            const tx_main = (targetPos.x - cub.position.x) * mapScale;
-            const tz_main = (targetPos.z - cub.position.z) * mapScale;
+            const tx_main = (targetPos.x - playerVehicle.position.x) * mapScale;
+            const tz_main = (targetPos.z - playerVehicle.position.z) * mapScale;
             
             // マップ上のガイドライン
             mapCtx.setLineDash([8, 4]);
-            mapCtx.strokeStyle = missionState === 'PICKUP' ? 'gold' : '#0ff';
+            mapCtx.strokeStyle = gameMode === 'BIKE' ? (missionState === 'PICKUP' ? 'gold' : '#0ff') : '#00ffff';
             mapCtx.lineWidth = 4;
             mapCtx.beginPath();
             mapCtx.moveTo(0, 0); 
@@ -528,9 +598,9 @@
             mapCtx.stroke();
 
             // ガソスタガイド
-            if (needsRefuel) {
-                const tx_fuel = (fuelTargetPos.x - cub.position.x) * mapScale;
-                const tz_fuel = (fuelTargetPos.z - cub.position.z) * mapScale;
+            if (gameMode === 'BIKE' && needsRefuel) {
+                const tx_fuel = (fuelTargetPos.x - playerVehicle.position.x) * mapScale;
+                const tz_fuel = (fuelTargetPos.z - playerVehicle.position.z) * mapScale;
                 mapCtx.strokeStyle = '#32cd32';
                 mapCtx.lineWidth = 3;
                 mapCtx.beginPath();
@@ -541,7 +611,7 @@
             }
 
             mapCtx.setLineDash([]);
-            drawTargetIcon(targetPos.x, targetPos.z, missionState);
+            drawTargetIcon(targetPos.x, targetPos.z, gameMode === 'BIKE' ? missionState : 'BUSSTOP');
             
             mapCtx.restore();
             mapCtx.fillStyle = '#0af'; mapCtx.beginPath(); mapCtx.arc(cx, cz, 5, 0, Math.PI*2); mapCtx.fill();
@@ -557,27 +627,41 @@
         window.addEventListener('keyup', e => keys[e.code] = false);
 
         function checkInteraction() {
-            // 通常ミッションの判定
-            if (cub.position.distanceTo(targetPos) < 30 && Math.abs(speed) < 0.1) {
-                immuneBuilding = targetPos.clone();
-                if (missionState === 'PICKUP') {
-                    missionState = 'DELIVERY'; cub.cargo.visible = true; setRandomTarget();
-                } else if (missionState === 'DELIVERY') {
-                    missionState = 'PICKUP'; cub.cargo.visible = false; deliveryCount++; score += 1000;
-                    document.getElementById('deliv-count').innerText = `完了数: ${deliveryCount}`;
-                    setRandomTarget(); nitroTimer = 300;
+            if (gameMode === 'BIKE') {
+                // バイクモードの判定
+                if (playerVehicle.position.distanceTo(targetPos) < 30 && Math.abs(speed) < 0.1) {
+                    immuneBuilding = targetPos.clone();
+                    if (missionState === 'PICKUP') {
+                        missionState = 'DELIVERY'; playerVehicle.cargo.visible = true; setRandomTarget();
+                    } else if (missionState === 'DELIVERY') {
+                        missionState = 'PICKUP'; playerVehicle.cargo.visible = false; deliveryCount++; score += 1000;
+                        document.getElementById('deliv-count').innerText = `完了数: ${deliveryCount}`;
+                        setRandomTarget(); nitroTimer = 300;
+                    }
+                    return;
                 }
-                return; // 同時判定防止
-            }
-
-            // 給油ミッションの判定
-            if (needsRefuel && cub.position.distanceTo(fuelTargetPos) < 30 && Math.abs(speed) < 0.1) {
-                immuneBuilding = fuelTargetPos.clone();
-                fuel = 100;
-                needsRefuel = false;
-                fuelMarker.visible = false;
-                fuelNavLine.visible = false;
-                setRandomTarget(true); // UI表示のリフレッシュ
+                // 給油
+                if (needsRefuel && playerVehicle.position.distanceTo(fuelTargetPos) < 30 && Math.abs(speed) < 0.1) {
+                    immuneBuilding = fuelTargetPos.clone(); fuel = 100; needsRefuel = false;
+                    fuelMarker.visible = false; fuelNavLine.visible = false; setRandomTarget(true);
+                }
+            } else {
+                // バスモードの判定
+                const stopDist = playerVehicle.position.distanceTo(targetPos);
+                if (stopDist < 25 && Math.abs(speed) < 0.1) {
+                    deliveryCount++;
+                    score += 500;
+                    document.getElementById('deliv-count').innerText = `バス停通過: ${deliveryCount}`;
+                    
+                    // アラート表示
+                    const alert = document.getElementById('center-alert');
+                    alert.innerText = "🚌 発車します。次は〜...";
+                    alert.style.color = "#00ffff";
+                    alert.style.display = 'block';
+                    setTimeout(() => { alert.style.display = 'none'; }, 2000);
+                    
+                    setRandomTarget();
+                }
             }
         }
 
@@ -586,7 +670,7 @@
 
         function update() {
             if (gameState === 'PLAYING') {
-                // 信号機の状態更新 (2フェーズ制)
+                // 信号機の状態更新
                 trafficTimer++;
                 const updateLights = () => {
                     if (trafficPhase === 0 && trafficTimer > 400) { trafficPhase = 1; trafficTimer = 0; }
@@ -596,17 +680,13 @@
                     else if (trafficPhase === 4 && trafficTimer > 150) { trafficPhase = 5; trafficTimer = 0; }
                     else if (trafficPhase === 5 && trafficTimer > 100) { trafficPhase = 0; trafficTimer = 0; }
                     
-                    // 存在しない信号機をリストから除外
                     trafficLights = trafficLights.filter(tl => tl.group.parent !== null);
-
                     trafficLights.forEach(tl => {
                         const l = tl.lights;
-                        // 南北方向
                         const nsS = (trafficPhase === 0) ? 'G' : (trafficPhase === 1 ? 'Y' : 'R');
                         l.ns.red.forEach(m => m.material.color.set(nsS === 'R' ? 0xff0000 : 0x220000));
                         l.ns.yellow.forEach(m => m.material.color.set(nsS === 'Y' ? 0xffff00 : 0x222200));
                         l.ns.green.forEach(m => m.material.color.set(nsS === 'G' ? 0x00ff00 : 0x002200));
-                        // 東西方向
                         const ewS = (trafficPhase === 3) ? 'G' : (trafficPhase === 4 ? 'Y' : 'R');
                         l.ew.red.forEach(m => m.material.color.set(ewS === 'R' ? 0xff0000 : 0x220000));
                         l.ew.yellow.forEach(m => m.material.color.set(ewS === 'Y' ? 0xffff00 : 0x222200));
@@ -621,21 +701,15 @@
                 const isTrainApproaching = (cycle > 500 && cycle < 750);
                 const isTrainPassing = (cycle >= 750 || cycle <= 50);
 
-                // 踏切の更新
                 for (let i = crossingGates.length - 1; i >= 0; i--) {
                     const g = crossingGates[i];
                     if (g.barGroup.parent === null || g.barGroup.parent.parent === null) {
                         crossingGates.splice(i, 1); continue;
                     }
-
-                    // 遮断機の開閉 (逆転修正: 接近時は 0[下], 通常時は PI/2[上])
                     const targetRot = isTrainApproaching || isTrainPassing ? 0 : Math.PI / 2;
                     g.barGroup.rotation.z += (targetRot - g.barGroup.rotation.z) * 0.05;
-
-                    // 警告灯の点滅
                     if (isTrainApproaching || isTrainPassing) {
                         const flash = Math.floor(Date.now() / 300) % 2;
-                        // 左側のランプ(0,2)と右側のランプ(1,3)を交互に
                         g.lights[0].material.color.set(flash === 0 ? 0xff0000 : 0x330000);
                         g.lights[2].material.color.set(flash === 0 ? 0xff0000 : 0x330000);
                         g.lights[1].material.color.set(flash === 1 ? 0xff0000 : 0x330000);
@@ -643,28 +717,26 @@
                     } else {
                         g.lights.forEach(l => l.material.color.set(0x330000));
                     }
-
-                    // 遮断機への衝突判定 (降りている[0付近]時のみ)
                     if (g.barGroup.rotation.z < 0.5) {
                         const gateWorldPos = new THREE.Vector3();
                         g.barGroup.getWorldPosition(gateWorldPos);
-                        if (Math.abs(cub.position.x - gateWorldPos.x) < 8 && Math.abs(cub.position.z - gateWorldPos.z) < 2) {
+                        if (Math.abs(playerVehicle.position.x - gateWorldPos.x) < 8 && Math.abs(playerVehicle.position.z - gateWorldPos.z) < 2) {
                             endGame("踏切強行突破で事故");
                         }
                     }
                 }
 
-                if (cycle === 750) { // 電車スポーン
-                    const lineGZ = Math.round(cub.position.z / (GRID_SIZE * 4)) * 4;
+                if (cycle === 750) {
+                    const lineGZ = Math.round(playerVehicle.position.z / (GRID_SIZE * 4)) * 4;
                     const train = createTrain();
                     train.position.set(-1000, 3, lineGZ * GRID_SIZE);
                     trains.push({ mesh: train });
                 }
 
                 trains.forEach((t, i) => {
-                    t.mesh.position.x += 15; // 電車のスピードアップ
-                    const relX = cub.position.x - t.mesh.position.x;
-                    if (Math.abs(cub.position.z - t.mesh.position.z) < 8 && relX > 0 && relX < 200) {
+                    t.mesh.position.x += 15;
+                    const relX = playerVehicle.position.x - t.mesh.position.x;
+                    if (Math.abs(playerVehicle.position.z - t.mesh.position.z) < 8 && relX > 0 && relX < 200) {
                         endGame("電車に撥ねられました");
                     }
                     if (t.mesh.position.x > 1000) {
@@ -672,7 +744,7 @@
                     }
                 });
 
-                // 一般車 (NPC) の生成と更新
+                // NPC
                 carSpawnTimer++;
                 if (carSpawnTimer > 60 && npcCars.length < 15) {
                     carSpawnTimer = 0;
@@ -680,236 +752,129 @@
                     const isNS = Math.random() > 0.5;
                     const dist = 160;
                     const spawnOffset = (Math.random() > 0.5 ? 1 : -1) * dist;
-                    
-                    const moveDir = Math.random() > 0.5 ? 1 : -1; // 1: 正方向, -1: 負方向
-
-                    let pos = new THREE.Vector3();
-                    let dir = new THREE.Vector3();
+                    const moveDir = Math.random() > 0.5 ? 1 : -1;
                     if (isNS) {
-                        const gx = Math.round(cub.position.x / GRID_SIZE);
-                        dir.set(0, 0, moveDir);
-                        // 左側通行: +ZならX=4, -ZならX=-4
+                        const gx = Math.round(playerVehicle.position.x / GRID_SIZE);
                         const laneX = moveDir * 4;
-                        pos.set(gx * GRID_SIZE + laneX, 0, cub.position.z + spawnOffset);
+                        car.position.set(gx * GRID_SIZE + laneX, 0, playerVehicle.position.z + spawnOffset);
                         car.rotation.y = moveDir > 0 ? 0 : Math.PI;
+                        npcCars.push({ mesh: car, dir: new THREE.Vector3(0,0,moveDir), speed: 0, targetSpeed: 0.3 + Math.random() * 0.3 });
                     } else {
-                        const gz = Math.round(cub.position.z / GRID_SIZE);
-                        // 線路 (gz % 4 === 0) には車を出現させない
-                        if (gz % 4 === 0) {
-                            scene.remove(car);
-                        } else {
-                            dir.set(moveDir, 0, 0);
-                            // 左側通行: +XならZ=-4, -XならZ=4
+                        const gz = Math.round(playerVehicle.position.z / GRID_SIZE);
+                        if (gz % 4 !== 0) {
                             const laneZ = -moveDir * 4;
-                            pos.set(cub.position.x + spawnOffset, 0, gz * GRID_SIZE + laneZ);
+                            car.position.set(playerVehicle.position.x + spawnOffset, 0, gz * GRID_SIZE + laneZ);
                             car.rotation.y = moveDir > 0 ? Math.PI/2 : -Math.PI/2;
-                            car.position.copy(pos);
-                            npcCars.push({ mesh: car, dir: dir, speed: 0, targetSpeed: 0.3 + Math.random() * 0.3 });
-                        }
+                            npcCars.push({ mesh: car, dir: new THREE.Vector3(moveDir,0,0), speed: 0, targetSpeed: 0.3 + Math.random() * 0.3 });
+                        } else { scene.remove(car); }
                     }
                 }
 
                 npcCars.forEach((c, i) => {
-                    // 信号と踏切のチェック
                     const gx = Math.round(c.mesh.position.x / GRID_SIZE);
                     const gz = Math.round(c.mesh.position.z / GRID_SIZE);
-                    const relX = c.mesh.position.x % GRID_SIZE;
-                    const relZ = c.mesh.position.z % GRID_SIZE;
-                    const normX = (relX + GRID_SIZE) % GRID_SIZE;
-                    const normZ = (relZ + GRID_SIZE) % GRID_SIZE;
-
+                    const normX = ((c.mesh.position.x % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
+                    const normZ = ((c.mesh.position.z % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
                     const isNS = Math.abs(c.dir.z) > Math.abs(c.dir.x);
-                    const isRailway = (gz % 4 === 0);
-
-                    // 次の交差点までの距離を計算
-                    let distToNextIntersection = 0;
-                    if (isNS) {
-                        distToNextIntersection = (c.dir.z > 0) ? (GRID_SIZE - normZ) : normZ;
-                    } else {
-                        distToNextIntersection = (c.dir.x > 0) ? (GRID_SIZE - normX) : normX;
-                    }
-
-                    // 交差点手前60ユニット以内か (ブロックの半分)
-                    const nearIntersection = distToNextIntersection < 60;
-
+                    const distToNextIntersection = isNS ? (c.dir.z > 0 ? (GRID_SIZE - normZ) : normZ) : (c.dir.x > 0 ? (GRID_SIZE - normX) : normX);
+                    
                     let shouldStop = false;
-                    const stopDist = 60; // 60手前から信号を見て停止判断
+                    const stopDist = 60;
+                    if (isNS) { if (distToNextIntersection < stopDist && distToNextIntersection > 5 && trafficPhase !== 0) shouldStop = true; }
+                    else { if (distToNextIntersection < stopDist && distToNextIntersection > 5 && trafficPhase !== 3) shouldStop = true; }
                     
-                    if (isNS) {
-                        if (distToNextIntersection < stopDist && distToNextIntersection > 5) {
-                            if (trafficPhase !== 0) shouldStop = true;
-                        }
-                    } else {
-                        if (distToNextIntersection < stopDist && distToNextIntersection > 5) {
-                            if (trafficPhase !== 3) shouldStop = true;
-                        }
-                    }
-                    
-                    if (isRailway && isNS) {
+                    if (gz % 4 === 0 && isNS) {
                         const relZTrain = (c.mesh.position.z % (GRID_SIZE * 4) + (GRID_SIZE * 4)) % (GRID_SIZE * 4);
-                        const cycle = trainTimer % 800;
-                        const isTrainComing = (cycle > 500 || cycle < 100);
-                        if (isTrainComing) {
-                            const dTrain = (c.dir.z > 0) ? ((GRID_SIZE * 4) - relZTrain) : relZTrain;
-                            if (dTrain < 60 && dTrain > 5) shouldStop = true;
-                        }
+                        const dTrain = (c.dir.z > 0) ? ((GRID_SIZE * 4) - relZTrain) : relZTrain;
+                        if (dTrain < 60 && dTrain > 5 && (cycle > 500 || cycle < 100)) shouldStop = true;
                     }
 
-                    // 追い越しAIロジック
+                    // 追い越し
                     let needsOvertake = false;
-                    const checkDist = 25;
-                    const rightVec = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), c.dir).normalize();
-
-                    // 交差点60手前でなく、かつ自分が停止中でない場合のみ追い越し検討
-                    if (!nearIntersection && !shouldStop && c.speed > 0.1) {
+                    if (distToNextIntersection >= 60 && !shouldStop && c.speed > 0.1) {
                         npcCars.forEach((other, oi) => {
                             if (i === oi) return;
-                            const dist = c.mesh.position.distanceTo(other.mesh.position);
-                            if (dist < checkDist) {
-                                const relPos = other.mesh.position.clone().sub(c.mesh.position);
-                                if (relPos.dot(c.dir) > 0.8 * dist && other.speed < c.targetSpeed * 0.7) {
-                                    needsOvertake = true;
-                                }
-                            }
-                        });
-                        if (c.mesh.position.distanceTo(cub.position) < checkDist) {
-                            const relPos = cub.position.clone().sub(c.mesh.position);
-                            if (relPos.dot(c.dir) > 0.8 * checkDist && Math.abs(speed) < 0.1) needsOvertake = true;
-                        }
-                    }
-
-                    // 無理な追い越し防止: 右側に車がいないかチェック
-                    if (needsOvertake) {
-                        const overtakePos = c.mesh.position.clone().add(rightVec.clone().multiplyScalar(6));
-                        npcCars.forEach((other, oi) => {
-                            if (i === oi) return;
-                            if (other.mesh.position.distanceTo(overtakePos) < 12) needsOvertake = false;
+                            const d = c.mesh.position.distanceTo(other.mesh.position);
+                            if (d < 25 && other.mesh.position.clone().sub(c.mesh.position).dot(c.dir) > 0.8 * d && other.speed < c.targetSpeed * 0.7) needsOvertake = true;
                         });
                     }
 
-                    // 車線維持・復帰ロジック
                     const targetLaneOffset = isNS ? (c.dir.z > 0 ? 4 : -4) : (c.dir.x > 0 ? -4 : 4);
                     let currentOffset = isNS ? (c.mesh.position.x - gx * GRID_SIZE) : (c.mesh.position.z - gz * GRID_SIZE);
-
                     if (needsOvertake) {
+                        const rightVec = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), c.dir).normalize();
                         c.mesh.position.add(rightVec.multiplyScalar(0.15));
                     } else {
                         const diff = targetLaneOffset - currentOffset;
                         if (Math.abs(diff) > 0.1) {
-                            const returnDir = diff > 0 ? 1 : -1;
-                            if (isNS) c.mesh.position.x += returnDir * 0.08;
-                            else c.mesh.position.z += returnDir * 0.08;
+                            if (isNS) c.mesh.position.x += (diff > 0 ? 1 : -1) * 0.08;
+                            else c.mesh.position.z += (diff > 0 ? 1 : -1) * 0.08;
                         }
                     }
 
                     c.speed += ( (shouldStop ? 0 : c.targetSpeed) - c.speed) * 0.05;
                     c.mesh.position.add(c.dir.clone().multiplyScalar(c.speed));
 
-                    if (cub.position.distanceTo(c.mesh.position) < 3.2) {
-                        endGame("一般車と衝突しました");
-                    }
-
-                    if (cub.position.distanceTo(c.mesh.position) > 200) {
-                        scene.remove(c.mesh);
-                        npcCars.splice(i, 1);
-                    }
+                    const collisionDist = gameMode === 'BIKE' ? 3.2 : 5.0;
+                    if (playerVehicle.position.distanceTo(c.mesh.position) < collisionDist) endGame("一般車と衝突しました");
+                    if (playerVehicle.position.distanceTo(c.mesh.position) > 200) { scene.remove(c.mesh); npcCars.splice(i, 1); }
                 });
 
-                // アクセル・ブレーキ
-                if (keys['KeyW'] || keys['ArrowUp']) {
-                    speed += ACCEL;
-                } else if (keys['KeyS'] || keys['ArrowDown']) {
-                    speed -= BRAKE;
-                } else {
-                    if (speed > 0) speed -= DECEL;
-                    else if (speed < 0) speed += DECEL;
+                // 自機操作
+                if (keys['KeyW'] || keys['ArrowUp']) speed += ACCEL;
+                else if (keys['KeyS'] || keys['ArrowDown']) speed -= BRAKE;
+                else {
+                    speed -= Math.sign(speed) * DECEL;
                     if (Math.abs(speed) < 0.01) speed = 0;
                 }
                 const max = nitroTimer > 0 ? SPEED_NITRO_MAX : SPEED_MAX;
                 speed = Math.max(-0.2, Math.min(max, speed));
 
-                // ハンドル
                 if (Math.abs(speed) > 0.05) {
                     const steerDir = speed > 0 ? 1 : -1;
                     if (keys['KeyA'] || keys['ArrowLeft']) currentRotationY += STEER_SPEED * steerDir;
                     else if (keys['KeyD'] || keys['ArrowRight']) currentRotationY -= STEER_SPEED * steerDir;
                 }
-                cub.rotation.z = (keys['KeyA'] || keys['ArrowLeft']) ? 0.15 : (keys['KeyD'] || keys['ArrowRight'] ? -0.15 : 0);
-
+                playerVehicle.rotation.z = (keys['KeyA'] || keys['ArrowLeft']) ? 0.15 : (keys['KeyD'] || keys['ArrowRight'] ? -0.15 : 0);
                 direction.set(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY);
-                cub.position.add(direction.clone().multiplyScalar(speed));
-                cub.rotation.y = currentRotationY;
+                playerVehicle.position.add(direction.clone().multiplyScalar(speed));
+                playerVehicle.rotation.y = currentRotationY;
 
-                // 燃料消費 (消費スピードを大幅に緩和)
-                if (Math.abs(speed) > 0.01) {
-                    fuel -= 0.01 + (Math.abs(speed) * 0.02); 
-                }
-                if (fuel <= 0) {
-                    fuel = 0;
-                    endGame("ガス欠になりました");
-                }
-                document.getElementById('fuel-fill').style.width = fuel + '%';
-                if (fuel < 30) {
-                    document.getElementById('fuel-fill').style.background = '#ff0000';
-                    if (!needsRefuel) setRandomTarget(); // 未発動の場合のみ、緊急ミッション発動
-                } else {
-                    document.getElementById('fuel-fill').style.background = '#32cd32';
-                }
-
-                // 信号無視判定 (進入時のみ一回チェック)
-                const gx_now = Math.round(cub.position.x / GRID_SIZE);
-                const gz_now = Math.round(cub.position.z / GRID_SIZE);
-                const isRailwayTile = (gz_now % 4 === 0);
-
-                const relX = ((cub.position.x % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
-                const relZ = ((cub.position.z % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
-                // 交差点の中心付近（前後15ユニット）にいるか判定
-                const inIntersection = (relX < 15 || relX > GRID_SIZE - 15) && (relZ < 15 || relZ > GRID_SIZE - 15);
-
-                if (inIntersection && !isRailwayTile) {
-                    if (!intersectionProcessed && Math.abs(speed) > 0.1) {
-                        const movingNS = Math.abs(direction.z) > Math.abs(direction.x);
-                        const movingEW = Math.abs(direction.x) > Math.abs(direction.z);
-                        
-                        let isIllegal = false;
-                        if (movingNS) {
-                            // 南北に走行中: 南北が赤(2,3,4,5)なら違反
-                            if (trafficPhase >= 2) isIllegal = true;
-                        } else if (movingEW) {
-                            // 東西に走行中: 東西が赤(0,1,2,5)なら違反
-                            if (trafficPhase <= 2 || trafficPhase === 5) isIllegal = true;
-                        }
-
-                        // 【改善】右左折中の誤判定防止: 
-                        // もし上記で「違反」とされても、もう一方の信号が青なら、
-                        // 交差点内での右左折中とみなして違反を取り消す
-                        if (isIllegal) {
-                            if (trafficPhase === 0 || trafficPhase === 1) { // 南北が青/黄なら
-                                if (Math.abs(direction.x) > 0.5) isIllegal = false; // 曲がっている最中ならOK
-                            }
-                            if (trafficPhase === 3 || trafficPhase === 4) { // 東西が青/黄なら
-                                if (Math.abs(direction.z) > 0.5) isIllegal = false; // 曲がっている最中ならOK
-                            }
-                        }
-
-                        if (isIllegal) {
-                            fuel -= 20;
-                            const alert = document.getElementById('center-alert');
-                            alert.innerText = "🚨 信号無視！ -20 GAS";
-                            alert.style.display = 'block';
-                            alert.style.animation = 'none';
-                            alert.offsetHeight; 
-                            alert.style.animation = null;
-                            setTimeout(() => { if (alert.innerText.includes("信号無視")) alert.style.display = 'none'; }, 2000);
-                        }
-                        intersectionProcessed = true; 
+                // バイクモード限定の燃料消費と信号無視
+                if (gameMode === 'BIKE') {
+                    if (Math.abs(speed) > 0.01) fuel -= 0.01 + (Math.abs(speed) * 0.02);
+                    if (fuel <= 0) endGame("ガス欠になりました");
+                    document.getElementById('fuel-fill').style.width = fuel + '%';
+                    if (fuel < 30) {
+                        document.getElementById('fuel-fill').style.background = '#ff0000';
+                        if (!needsRefuel) setRandomTarget();
                     }
-                } else {
-                    intersectionProcessed = false;
+
+                    const relX = ((playerVehicle.position.x % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
+                    const relZ = ((playerVehicle.position.z % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
+                    const inIntersection = (relX < 15 || relX > GRID_SIZE - 15) && (relZ < 15 || relZ > GRID_SIZE - 15);
+                    if (inIntersection && (Math.round(playerVehicle.position.z / GRID_SIZE) % 4 !== 0)) {
+                        if (!intersectionProcessed && Math.abs(speed) > 0.1) {
+                            let isIllegal = (Math.abs(direction.z) > Math.abs(direction.x)) ? (trafficPhase >= 2) : (trafficPhase <= 2 || trafficPhase === 5);
+                            if (isIllegal) {
+                                if ((trafficPhase === 0 || trafficPhase === 1) && Math.abs(direction.x) > 0.5) isIllegal = false;
+                                if ((trafficPhase === 3 || trafficPhase === 4) && Math.abs(direction.z) > 0.5) isIllegal = false;
+                            }
+                            if (isIllegal) {
+                                fuel -= 20;
+                                const alert = document.getElementById('center-alert');
+                                alert.innerText = "🚨 信号無視！ -20 GAS";
+                                alert.style.display = 'block';
+                                setTimeout(() => { if (alert.innerText.includes("信号無視")) alert.style.display = 'none'; }, 2000);
+                            }
+                            intersectionProcessed = true;
+                        }
+                    } else { intersectionProcessed = false; }
                 }
 
-                const gx = Math.round(cub.position.x / GRID_SIZE);
-                const gz = Math.round(cub.position.z / GRID_SIZE);
+                // 道路生成
+                const gx = Math.round(playerVehicle.position.x / GRID_SIZE);
+                const gz = Math.round(playerVehicle.position.z / GRID_SIZE);
                 for(let x=-1; x<=1; x++) {
                     for(let z=-1; z<=1; z++) {
                         const k = `${gx+x},${gz+z}`;
@@ -918,38 +883,28 @@
                 }
 
                 score += Math.floor(Math.abs(speed) * 2);
-                document.getElementById('score').innerText = `配達距離: ${score}m`;
+                document.getElementById('score').innerText = `${gameMode === 'BIKE' ? '配達' : '走行'}距離: ${score}m`;
                 document.getElementById('speed').innerText = `時速: ${Math.floor(Math.abs(speed) * 120)} km/h`;
                 if (nitroTimer > 0) { nitroTimer--; document.getElementById('nitro-fill').style.width = (nitroTimer/300*100)+'%'; }
                 
-                const distToTarget = cub.position.distanceTo(targetPos);
+                const distToTarget = playerVehicle.position.distanceTo(targetPos);
                 document.getElementById('distance-text').innerText = `あと ${Math.floor(distToTarget)}m`;
                 document.getElementById('distance-text').style.color = distToTarget < 25 ? "#0f0" : "#fff";
-                
-                document.getElementById('interact-prompt').style.display = (distToTarget < 30 && Math.abs(speed) < 0.1) ? 'block' : 'none';
+                document.getElementById('interact-prompt').style.display = (distToTarget < (gameMode === 'BIKE' ? 30 : 25) && Math.abs(speed) < 0.1) ? 'block' : 'none';
 
-                camera.position.lerp(cub.position.clone().add(new THREE.Vector3(0, 7, 15).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY)), 0.1);
-                camera.lookAt(cub.position.x, 1.5, cub.position.z);
+                camera.position.lerp(playerVehicle.position.clone().add(new THREE.Vector3(0, gameMode === 'BIKE' ? 7 : 10, gameMode === 'BIKE' ? 15 : 25).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY)), 0.1);
+                camera.lookAt(playerVehicle.position.x, 1.5, playerVehicle.position.z);
 
                 buildingMeshes.forEach(b => {
-                    const dist = cub.position.distanceTo(b.pos);
-                    if (immuneBuilding && cub.position.distanceTo(immuneBuilding) > 35) {
-                        immuneBuilding = null;
-                    }
-                    if (immuneBuilding && b.pos.distanceTo(immuneBuilding) < 1) {
-                        return;
-                    }
-                    if (Math.abs(cub.position.x - b.pos.x) < b.size/2+1.2 && Math.abs(cub.position.z - b.pos.z) < b.size/2+1.2) {
+                    if (immuneBuilding && b.pos.distanceTo(immuneBuilding) < 1) return;
+                    const hitDist = gameMode === 'BIKE' ? b.size/2+1.2 : b.size/2+2.5;
+                    if (Math.abs(playerVehicle.position.x - b.pos.x) < hitDist && Math.abs(playerVehicle.position.z - b.pos.z) < hitDist) {
                         if (!b.isTarget) endGame("建物に衝突しました");
                     }
                 });
 
                 ring.rotation.z += 0.05;
-                const points = [
-                    cub.position.clone().add(new THREE.Vector3(0, 0.5, 0)),
-                    targetPos.clone().add(new THREE.Vector3(0, 0.5, 0))
-                ];
-                navLine.geometry.setFromPoints(points);
+                navLine.geometry.setFromPoints([playerVehicle.position.clone().add(new THREE.Vector3(0, 0.5, 0)), targetPos.clone().add(new THREE.Vector3(0, 0.5, 0))]);
                 navLine.computeLineDistances(); 
             }
             updateMap();
@@ -957,9 +912,39 @@
             requestAnimationFrame(update);
         }
 
-        document.getElementById('start-button').addEventListener('click', () => {
+        document.getElementById('bike-btn').addEventListener('click', () => {
+            gameMode = 'BIKE';
+            document.getElementById('fuel-ui').style.display = 'block';
             document.getElementById('start-screen').style.display = 'none';
+            setupVehicle('BIKE');
             gameState = 'PLAYING'; setRandomTarget();
+        });
+
+        document.getElementById('bus-btn').addEventListener('click', () => {
+            gameMode = 'BUS';
+            document.getElementById('fuel-ui').style.display = 'none';
+            document.getElementById('start-screen').style.display = 'none';
+            setupVehicle('BUS');
+            gameState = 'PLAYING'; setRandomTarget();
+        });
+
+        document.getElementById('retry-btn').addEventListener('click', () => {
+            document.getElementById('game-over').style.display = 'none';
+            // 状態のリセット
+            score = 0;
+            deliveryCount = 0;
+            fuel = 100;
+            speed = 0;
+            nitroTimer = 0;
+            needsRefuel = false;
+            fuelMarker.visible = false;
+            fuelNavLine.visible = false;
+            intersectionProcessed = false;
+            
+            // 乗り物の再セットアップ
+            setupVehicle(gameMode);
+            gameState = 'PLAYING';
+            setRandomTarget();
         });
         function endGame(msg) {
             gameState = 'GAMEOVER'; document.getElementById('game-over').style.display = 'flex';
