@@ -149,6 +149,7 @@
             return group;
         }
         const cub = createCub();
+        cub.scale.set(1.8, 1.8, 1.8);
         scene.add(cub);
 
         // --- 目的地マーカー ---
@@ -301,7 +302,7 @@
         window.addEventListener('keyup', e => keys[e.code] = false);
 
         function checkInteraction() {
-            if (cub.position.distanceTo(targetPos) < 20 && Math.abs(speed) < 0.1) {
+            if (cub.position.distanceTo(targetPos) < 30 && Math.abs(speed) < 0.1) {
                 immuneBuilding = targetPos.clone();
 
                 if (missionState === 'PICKUP') {
@@ -380,13 +381,13 @@
                 document.getElementById('distance-text').innerText = `あと ${Math.floor(distToTarget)}m`;
                 document.getElementById('distance-text').style.color = distToTarget < 25 ? "#0f0" : "#fff";
                 
-                document.getElementById('interact-prompt').style.display = (distToTarget < 20 && Math.abs(speed) < 0.1) ? 'block' : 'none';
+                document.getElementById('interact-prompt').style.display = (distToTarget < 30 && Math.abs(speed) < 0.1) ? 'block' : 'none';
 
-                camera.position.lerp(cub.position.clone().add(new THREE.Vector3(0, 5, 12).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY)), 0.1);
-                camera.lookAt(cub.position.x, 1, cub.position.z);
+                camera.position.lerp(cub.position.clone().add(new THREE.Vector3(0, 7, 15).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY)), 0.1);
+                camera.lookAt(cub.position.x, 1.5, cub.position.z);
 
                 obstacles.forEach((obs, i) => {
-                    if (cub.position.distanceTo(obs.position) < 1.1) endGame("障害物に激突しました");
+                    if (cub.position.distanceTo(obs.position) < 2.0) endGame("障害物に激突しました");
                 });
                 // 当たり判定 (建物)
                 buildingMeshes.forEach(b => {
@@ -402,7 +403,7 @@
                         return;
                     }
 
-                    if (Math.abs(cub.position.x - b.pos.x) < b.size/2+0.5 && Math.abs(cub.position.z - b.pos.z) < b.size/2+0.5) {
+                    if (Math.abs(cub.position.x - b.pos.x) < b.size/2+1.2 && Math.abs(cub.position.z - b.pos.z) < b.size/2+1.2) {
                         if (!b.isTarget) endGame("建物に衝突しました");
                     }
                 });
