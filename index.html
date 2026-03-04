@@ -151,6 +151,10 @@
         // --- 一般車 (NPC) 管理 ---
         const npcCars = []; 
         let carSpawnTimer = 0;
+
+        // --- 歩行者管理 ---
+        const pedestrians = [];
+        let pedsSpawnTimer = 0;
         
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -168,6 +172,23 @@
         scene.add(sun);
 
         // --- 乗り物作成 ---
+        function createPedestrian() {
+            const group = new THREE.Group();
+            const colors = [0xffaaaa, 0xaaaaff, 0xaaffaa, 0xffffaa, 0xffffff];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            
+            // 体
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.2, 0.4), new THREE.MeshStandardMaterial({ color: color }));
+            body.position.y = 0.6; group.add(body);
+            // 頭
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshStandardMaterial({ color: 0xffdbac }));
+            head.position.y = 1.4; group.add(head);
+            
+            group.isPedestrian = true;
+            scene.add(group);
+            return group;
+        }
+
         function createCub() {
             const group = new THREE.Group();
             const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 1.5), new THREE.MeshStandardMaterial({ color: 0x0055aa }));
@@ -840,6 +861,39 @@
                     const collisionDist = gameMode === 'BIKE' ? 3.2 : 5.0;
                     if (playerVehicle.position.distanceTo(c.mesh.position) < collisionDist) endGame("一般車と衝突しました");
                     if (playerVehicle.position.distanceTo(c.mesh.position) > 200) { scene.remove(c.mesh); npcCars.splice(i, 1); }
+                });
+
+                // 歩行者スポーン
+                pedsSpawnTimer++;
+                if (pedsSpawnTimer > 100 && pedestrians.length < 10) {
+                    pedsSpawnTimer = 0;
+                    const ped = createPedestrian();
+                    const isNS = Math.random() > 0.5;
+                    const spawnDist = 100;
+                    const offset = (Math.random() > 0.5 ? 1 : -1) * spawnDist;
+                    const laneOffset = (Math.random() > 0.5 ? 1 : -1) * 10; // 歩道（道路中央から10離れた位置）
+                    
+                    if (isNS) {
+                        ped.position.set(Math.round(playerVehicle.position.x/GRID_SIZE)*GRID_SIZE + laneOffset, 0, playerVehicle.position.z + offset);
+                        ped.walkDir = new THREE.Vector3(0, 0, Math.random() > 0.5 ? 1 : -1);
+                    } else {
+                        ped.position.set(playerVehicle.position.x + offset, 0, Math.round(playerVehicle.position.z/GRID_SIZE)*GRID_SIZE + laneOffset);
+                        ped.walkDir = new THREE.Vector3(Math.random() > 0.5 ? 1 : -1, 0, 0);
+                    }
+                    pedestrians.push(ped);
+                }
+
+                // 歩行者更新
+                pedestrians.forEach((p, i) => {
+                    p.position.add(p.walkDir.clone().multiplyScalar(0.05));
+                    // 衝突判定
+                    const dist = playerVehicle.position.distanceTo(p.position);
+                    const hitDist = gameMode === 'BIKE' ? 2.5 : 4.0;
+                    if (dist < hitDist) endGame("人身事故を起こしました");
+                    // 遠くへ行ったら削除
+                    if (playerVehicle.position.distanceTo(p.position) > 150) {
+                        scene.remove(p); pedestrians.splice(i, 1);
+                    }
                 });
 
                 // 自機操作
