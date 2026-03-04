@@ -3,22 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>爆走！激辛デリバリー 3D - Free Ride Edition</title>
+    <title>爆走！激辛デリバリー 3D - Mission Edition</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Arial', sans-serif; background: #87CEEB; touch-action: none; }
         #ui { position: absolute; top: 20px; left: 20px; color: white; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); pointer-events: none; }
         #speed { font-size: 24px; font-weight: bold; }
         #nitro-bar { width: 200px; height: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; margin-top: 5px; overflow: hidden; }
         #nitro-fill { width: 0%; height: 100%; background: #ff4500; transition: width 0.1s; }
-        #instructions { position: absolute; bottom: 20px; width: 100%; text-align: center; color: white; text-shadow: 1px 1px 2px black; font-size: 14px; pointer-events: none; }
         
+        #mission-ui {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.7); color: gold; padding: 10px 30px; border-radius: 20px;
+            font-size: 20px; font-weight: bold; border: 2px solid gold; text-align: center;
+        }
+        #interact-prompt {
+            position: absolute; bottom: 300px; left: 50%; transform: translateX(-50%);
+            background: #fff; color: #333; padding: 10px 20px; border-radius: 10px;
+            font-size: 24px; font-weight: bold; display: none; animation: pulse 1s infinite;
+        }
+        @keyframes pulse { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
+
         #map-container {
             position: absolute; bottom: 20px; right: 20px; width: 250px; height: 250px;
             background: rgba(0, 0, 0, 0.6); border: 3px solid #0f0; border-radius: 15px; overflow: hidden;
-            box-shadow: 0 0 20px rgba(0, 255, 0, 0.2);
         }
         #map-canvas { width: 100%; height: 100%; }
-        #map-label { position: absolute; top: 5px; width: 100%; text-align: center; color: #0f0; font-size: 14px; font-weight: bold; font-family: monospace; letter-spacing: 2px; }
+        #map-label { position: absolute; top: 5px; width: 100%; text-align: center; color: #0f0; font-size: 14px; font-weight: bold; font-family: monospace; }
 
         #start-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 100; }
         #start-button { padding: 15px 40px; font-size: 24px; background: #ff4500; border: none; border-radius: 30px; color: white; cursor: pointer; }
@@ -28,31 +38,31 @@
 <body>
     <div id="ui">
         <div id="speed">時速: 0 km/h</div>
-        <div>激辛ニトロ</div>
+        <div id="nitro-label">激辛ニトロ</div>
         <div id="nitro-bar"><div id="nitro-fill"></div></div>
         <div id="score" style="margin-top: 10px; font-size: 18px;">配達距離: 0m</div>
+        <div id="deliv-count" style="margin-top: 5px; font-size: 20px; color: gold;">完了数: 0</div>
     </div>
+
+    <div id="mission-ui">目的地を探せ！</div>
+    <div id="interact-prompt">E キーでアクション！</div>
 
     <div id="map-container">
-        <div id="map-label">FREE GPS</div>
+        <div id="map-label">DELIVERY GPS</div>
         <canvas id="map-canvas"></canvas>
-    </div>
-
-    <div id="instructions">
-        A / D キー（または左右矢印）で自由にハンドル操作！
     </div>
 
     <div id="start-screen">
         <h1 style="font-size: 48px; margin-bottom: 10px;">爆走！激辛デリバリー</h1>
-        <p style="margin-bottom: 30px;">自由にハンドルを切って、障害物を避けて進め！</p>
+        <p style="margin-bottom: 30px;">荷物を拾い、目的地へ届けろ！ Eキーでアクション！</p>
         <button id="start-button">配達開始！</button>
     </div>
 
     <div id="game-over">
         <h1 style="font-size: 64px;">事故発生！</h1>
-        <p id="cause" style="font-size: 20px; margin-bottom: 10px; color: #ffaaaa;">障害物に激突しました</p>
+        <p id="cause" style="font-size: 20px; margin-bottom: 10px;"></p>
         <p id="final-score" style="font-size: 24px;"></p>
-        <button onclick="location.reload()" style="margin-top:20px; padding:10px 20px; font-size:18px; cursor:pointer;">もう一度配達する</button>
+        <button onclick="location.reload()" style="margin-top:20px; padding:10px 20px; font-size:18px;">リトライ</button>
     </div>
 
     <script type="importmap">
@@ -66,18 +76,21 @@
         import * as THREE from 'three';
 
         // --- 設定 ---
-        const GRID_SIZE = 100; // 交差点の間隔
+        const GRID_SIZE = 100;
         const ROAD_WIDTH = 14;
         const SPEED_BASE = 0.6;
         const SPEED_NITRO = 1.3;
         const STEER_SPEED = 0.04;
         
         let gameState = 'START';
+        let missionState = 'PICKUP'; // PICKUP or DELIVERY
         let speed = 0;
         let nitroTimer = 0;
         let score = 0;
+        let deliveryCount = 0;
         let currentRotationY = 0;
         let direction = new THREE.Vector3(0, 0, -1);
+        let targetPos = new THREE.Vector3();
         
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -103,234 +116,204 @@
             body.position.y = 0.6; group.add(body);
             const box = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.5), new THREE.MeshStandardMaterial({ color: 0xaaaaaa }));
             box.position.set(0, 1.1, -0.6); group.add(box);
+            // 荷物表示用
+            const cargo = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.4), new THREE.MeshStandardMaterial({ color: 0xffaa00 }));
+            cargo.position.set(0, 1.4, -0.6); cargo.visible = false;
+            group.add(cargo);
+            group.cargo = cargo;
+
             const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.2, 16);
-            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-            const front = new THREE.Mesh(wheelGeo, wheelMat); front.rotation.z = Math.PI/2; front.position.set(0, 0.35, 0.8); group.add(front);
+            const front = new THREE.Mesh(wheelGeo, new THREE.MeshStandardMaterial({ color: 0x111111 }));
+            front.rotation.z = Math.PI/2; front.position.set(0, 0.35, 0.8); group.add(front);
             const back = front.clone(); back.position.set(0, 0.35, -0.8); group.add(back);
             return group;
         }
         const cub = createCub();
         scene.add(cub);
 
-        // --- 道路タイル管理 ---
+        // --- 目的地の光の柱 ---
+        const marker = new THREE.Group();
+        const beam = new THREE.Mesh(
+            new THREE.CylinderGeometry(2, 2, 100, 16, 1, true),
+            new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
+        );
+        beam.position.y = 50;
+        marker.add(beam);
+        const ring = new THREE.Mesh(
+            new THREE.TorusGeometry(3, 0.2, 16, 32),
+            new THREE.MeshBasicMaterial({ color: 0xffff00 })
+        );
+        ring.rotation.x = Math.PI/2;
+        marker.add(ring);
+        scene.add(marker);
+
+        function setRandomTarget() {
+            const gx = Math.round((cub.position.x / GRID_SIZE) + (Math.random() > 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 2)));
+            const gz = Math.round((cub.position.z / GRID_SIZE) + (Math.random() > 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 2)));
+            targetPos.set(gx * GRID_SIZE, 0, gz * GRID_SIZE);
+            marker.position.copy(targetPos);
+            
+            if (missionState === 'PICKUP') {
+                beam.material.color.set(0xffff00); ring.material.color.set(0xffff00);
+                document.getElementById('mission-ui').innerText = "荷物を集荷しに向かえ！";
+                document.getElementById('mission-ui').style.color = "gold";
+            } else {
+                beam.material.color.set(0x00ffff); ring.material.color.set(0x00ffff);
+                document.getElementById('mission-ui').innerText = "お届け先に配達せよ！";
+                document.getElementById('mission-ui').style.color = "#00ffff";
+            }
+        }
+
+        // --- 道路タイル ---
         const roads = new Map();
         const buildingMeshes = [];
-
         function createRoadTile(gx, gz) {
             const group = new THREE.Group();
-            const rx = gx * GRID_SIZE;
-            const rz = gz * GRID_SIZE;
-
-            // 地面
+            const rx = gx * GRID_SIZE; const rz = gz * GRID_SIZE;
             const grass = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE), new THREE.MeshStandardMaterial({ color: 0x3d7a35 }));
             grass.rotation.x = -Math.PI/2; grass.position.y = -0.02; group.add(grass);
-
-            // 道路
             const roadV = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, GRID_SIZE), new THREE.MeshStandardMaterial({ color: 0x333333 }));
             roadV.rotation.x = -Math.PI/2; group.add(roadV);
             const roadH = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, ROAD_WIDTH), new THREE.MeshStandardMaterial({ color: 0x333333 }));
             roadH.rotation.x = -Math.PI/2; group.add(roadH);
 
-            // 建物
-            const bSize = 25;
-            const bOffset = 35;
+            const bSize = 25; const bOffset = 35;
             [[-1,-1], [1,-1], [-1,1], [1,1]].forEach(([sx, sz]) => {
                 const h = 10 + Math.random()*30;
                 const b = new THREE.Mesh(new THREE.BoxGeometry(bSize, h, bSize), new THREE.MeshStandardMaterial({ color: 0x777777 }));
-                b.position.set(sx * bOffset, h/2, sz * bOffset);
-                b.castShadow = true;
-                group.add(b);
-                
-                // 当たり判定用にグローバル座標を計算
-                const buildingInfo = {
-                    pos: new THREE.Vector3(rx + sx * bOffset, 0, rz + sz * bOffset),
-                    size: bSize
-                };
-                buildingMeshes.push(buildingInfo);
+                b.position.set(sx * bOffset, h/2, sz * bOffset); group.add(b);
+                buildingMeshes.push({ pos: new THREE.Vector3(rx + sx * bOffset, 0, rz + sz * bOffset), size: bSize });
             });
-
-            group.position.set(rx, 0, rz);
-            scene.add(group);
-            return group;
+            group.position.set(rx, 0, rz); scene.add(group); return group;
         }
 
-        // --- 障害物・アイテム ---
+        // --- 障害物 ---
         const obstacles = [];
-        const items = [];
         function spawn() {
             if (gameState !== 'PLAYING') return;
-            const dist = 60;
-            const pos = cub.position.clone().add(direction.clone().multiplyScalar(dist));
-            // 進行方向に対して左右に散らす
+            const pos = cub.position.clone().add(direction.clone().multiplyScalar(60));
             const rightVec = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), direction).normalize();
             pos.add(rightVec.multiplyScalar((Math.random()-0.5) * 12));
-            
-            if (Math.random() > 0.4) {
-                const obs = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 8), new THREE.MeshStandardMaterial({ color: 0xff4500 }));
-                obs.position.copy(pos); obs.position.y = 0.5; scene.add(obs); obstacles.push(obs);
-            } else {
-                const item = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 8), new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000 }));
-                item.position.copy(pos); item.position.y = 0.7; scene.add(item); items.push(item);
-            }
+            const obs = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 8), new THREE.MeshStandardMaterial({ color: 0xff4500 }));
+            obs.position.copy(pos); obs.position.y = 0.5; scene.add(obs); obstacles.push(obs);
         }
-        setInterval(spawn, 800);
+        setInterval(spawn, 1200);
 
         // --- マップ ---
         const mapCanvas = document.getElementById('map-canvas');
         const mapCtx = mapCanvas.getContext('2d');
-        mapCanvas.width = 250;
-        mapCanvas.height = 250;
-
+        mapCanvas.width = 250; mapCanvas.height = 250;
         function updateMap() {
             mapCtx.clearRect(0,0,250,250);
             mapCtx.fillStyle = 'rgba(0, 20, 0, 0.8)'; mapCtx.fillRect(0,0,250,250);
-            
-            const cx=125, cz=125;
-            const mapScale = 0.4; // 1m = 0.4px
-
-            mapCtx.save();
-            mapCtx.translate(cx, cz);
-            mapCtx.rotate(-currentRotationY);
-
-            // 道路の線を描画
+            const cx=125, cz=125; const mapScale = 0.4;
+            mapCtx.save(); mapCtx.translate(cx, cz); mapCtx.rotate(-currentRotationY);
+            // 道路
             mapCtx.strokeStyle = '#004400';
-            mapCtx.lineWidth = 1;
-            for(let x=-3; x<=3; x++) {
+            for(let x=-2; x<=2; x++) {
                 const lx = (Math.round(cub.position.x/GRID_SIZE) + x) * GRID_SIZE - cub.position.x;
                 mapCtx.beginPath(); mapCtx.moveTo(lx * mapScale, -125); mapCtx.lineTo(lx * mapScale, 125); mapCtx.stroke();
             }
-            for(let z=-3; z<=3; z++) {
+            for(let z=-2; z<=2; z++) {
                 const lz = (Math.round(cub.position.z/GRID_SIZE) + z) * GRID_SIZE - cub.position.z;
                 mapCtx.beginPath(); mapCtx.moveTo(-125, lz * mapScale); mapCtx.lineTo(125, lz * mapScale); mapCtx.stroke();
             }
-
-            // 太いメイン道路（現在地付近）
-            mapCtx.strokeStyle = '#008800';
-            mapCtx.lineWidth = 3;
-            const rx = (Math.round(cub.position.x/GRID_SIZE) * GRID_SIZE - cub.position.x) * mapScale;
-            const rz = (Math.round(cub.position.z/GRID_SIZE) * GRID_SIZE - cub.position.z) * mapScale;
-            mapCtx.beginPath(); mapCtx.moveTo(rx, -125); mapCtx.lineTo(rx, 125); mapCtx.stroke();
-            mapCtx.beginPath(); mapCtx.moveTo(-125, rz); mapCtx.lineTo(125, rz); mapCtx.stroke();
-
+            // ターゲットアイコン
+            const tx = (targetPos.x - cub.position.x) * mapScale;
+            const tz = (targetPos.z - cub.position.z) * mapScale;
+            mapCtx.fillStyle = missionState === 'PICKUP' ? 'gold' : '#0ff';
+            mapCtx.beginPath(); mapCtx.arc(tx, tz, 6, 0, Math.PI*2); mapCtx.fill();
             mapCtx.restore();
-
-            // プレイヤー位置 (中央固定)
-            mapCtx.fillStyle = '#0af';
-            mapCtx.shadowBlur = 10; mapCtx.shadowColor = '#0af';
-            mapCtx.beginPath();
-            mapCtx.arc(cx, cz, 4, 0, Math.PI * 2);
-            mapCtx.fill();
-            
-            // 向きを示す三角形
-            mapCtx.beginPath();
-            mapCtx.moveTo(cx, cz - 10);
-            mapCtx.lineTo(cx - 6, cz + 2);
-            mapCtx.lineTo(cx + 6, cz + 2);
-            mapCtx.fill();
-            mapCtx.shadowBlur = 0;
+            // 自車
+            mapCtx.fillStyle = '#0af'; mapCtx.beginPath(); mapCtx.arc(cx, cz, 4, 0, Math.PI*2); mapCtx.fill();
+            mapCtx.beginPath(); mapCtx.moveTo(cx, cz-10); mapCtx.lineTo(cx-6, cz+2); mapCtx.lineTo(cx+6, cz+2); mapCtx.fill();
         }
 
-        // --- ループ ---
+        // --- 入力 ---
         const keys = {};
-        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keydown', e => {
+            keys[e.code] = true;
+            if (e.code === 'KeyE' && gameState === 'PLAYING') {
+                checkInteraction();
+            }
+        });
         window.addEventListener('keyup', e => keys[e.code] = false);
 
-        let touchSide = null;
-        window.addEventListener('touchstart', e => {
-            touchSide = e.touches[0].clientX < window.innerWidth / 2 ? 'left' : 'right';
-        });
-        window.addEventListener('touchend', () => touchSide = null);
+        function checkInteraction() {
+            if (cub.position.distanceTo(targetPos) < 10) {
+                if (missionState === 'PICKUP') {
+                    missionState = 'DELIVERY';
+                    cub.cargo.visible = true;
+                    setRandomTarget();
+                } else {
+                    missionState = 'PICKUP';
+                    cub.cargo.visible = false;
+                    deliveryCount++;
+                    score += 500;
+                    document.getElementById('deliv-count').innerText = `完了数: ${deliveryCount}`;
+                    setRandomTarget();
+                    nitroTimer = 300; // 配達完了でニトロ！
+                }
+            }
+        }
 
         function update() {
             if (gameState === 'PLAYING') {
-                // ハンドル操作
-                if (keys['KeyA'] || keys['ArrowLeft'] || touchSide === 'left') {
-                    currentRotationY += STEER_SPEED;
-                    cub.rotation.z = Math.PI * 0.15; // 傾き
-                } else if (keys['KeyD'] || keys['ArrowRight'] || touchSide === 'right') {
-                    currentRotationY -= STEER_SPEED;
-                    cub.rotation.z = -Math.PI * 0.15;
-                } else {
-                    cub.rotation.z *= 0.8;
-                }
+                if (keys['KeyA'] || keys['ArrowLeft']) currentRotationY += STEER_SPEED;
+                else if (keys['KeyD'] || keys['ArrowRight']) currentRotationY -= STEER_SPEED;
+                cub.rotation.z = (keys['KeyA'] || keys['ArrowLeft']) ? 0.15 : (keys['KeyD'] || keys['ArrowRight'] ? -0.15 : 0);
 
-                // 移動
                 const tSpeed = nitroTimer > 0 ? SPEED_NITRO : SPEED_BASE;
                 speed += (tSpeed - speed) * 0.1;
                 direction.set(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY);
                 cub.position.add(direction.clone().multiplyScalar(speed));
                 cub.rotation.y = currentRotationY;
 
-                // タイル生成
                 const gx = Math.round(cub.position.x / GRID_SIZE);
                 const gz = Math.round(cub.position.z / GRID_SIZE);
                 for(let x=-1; x<=1; x++) {
                     for(let z=-1; z<=1; z++) {
-                        const key = `${gx+x},${gz+z}`;
-                        if (!roads.has(key)) roads.set(key, createRoadTile(gx+x, gz+z));
+                        const k = `${gx+x},${gz+z}`;
+                        if (!roads.has(k)) roads.set(k, createRoadTile(gx+x, gz+z));
                     }
                 }
 
-                // スコア・ニトロ
-                score += Math.floor(speed * 10);
+                score += Math.floor(speed * 2);
                 document.getElementById('score').innerText = `配達距離: ${score}m`;
                 document.getElementById('speed').innerText = `時速: ${Math.floor(speed * 120)} km/h`;
-                if (nitroTimer > 0) {
-                    nitroTimer--;
-                    document.getElementById('nitro-fill').style.width = (nitroTimer/180*100)+'%';
-                    cub.position.y = Math.sin(Date.now()*0.05)*0.05;
-                } else {
-                    document.getElementById('nitro-fill').style.width = '0%';
-                    cub.position.y = 0;
-                }
+                if (nitroTimer > 0) { nitroTimer--; document.getElementById('nitro-fill').style.width = (nitroTimer/300*100)+'%'; }
+                
+                // インタラクションUI表示
+                const distToTarget = cub.position.distanceTo(targetPos);
+                document.getElementById('interact-prompt').style.display = distToTarget < 10 ? 'block' : 'none';
 
-                // カメラ (スムーズ追従)
-                const camPos = cub.position.clone().add(new THREE.Vector3(0, 5, 12).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY));
-                camera.position.lerp(camPos, 0.1);
+                camera.position.lerp(cub.position.clone().add(new THREE.Vector3(0, 5, 12).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY)), 0.1);
                 camera.lookAt(cub.position.x, 1, cub.position.z);
 
-                // 当たり判定 (障害物)
                 obstacles.forEach((obs, i) => {
-                    if (cub.position.distanceTo(obs.position) < 1.1) {
-                        endGame("障害物に激突しました");
-                    }
-                    if (cub.position.distanceTo(obs.position) > 150) {
-                        scene.remove(obs); obstacles.splice(i, 1);
-                    }
+                    if (cub.position.distanceTo(obs.position) < 1.1) endGame("障害物に激突しました");
                 });
-
-                // 当たり判定 (建物)
                 buildingMeshes.forEach(b => {
-                    const dx = Math.abs(cub.position.x - b.pos.x);
-                    const dz = Math.abs(cub.position.z - b.pos.z);
-                    const limit = b.size / 2 + 0.5;
-                    if (dx < limit && dz < limit) {
-                        endGame("建物に衝突しました");
-                    }
+                    if (Math.abs(cub.position.x - b.pos.x) < b.size/2+0.5 && Math.abs(cub.position.z - b.pos.z) < b.size/2+0.5) endGame("建物に衝突しました");
                 });
-
-                // アイテム取得
-                items.forEach((item, i) => {
-                    if (cub.position.distanceTo(item.position) < 1.5) {
-                        nitroTimer = 180; scene.remove(item); items.splice(i, 1);
-                    }
-                });
+                ring.rotation.z += 0.05;
             }
             updateMap();
             renderer.render(scene, camera);
             requestAnimationFrame(update);
         }
 
-        function endGame(reason) {
+        function endGame(msg) {
             gameState = 'GAMEOVER';
             document.getElementById('game-over').style.display = 'flex';
-            document.getElementById('cause').innerText = reason;
-            document.getElementById('final-score').innerText = `記録: ${score}m`;
+            document.getElementById('cause').innerText = msg;
+            document.getElementById('final-score').innerText = `記録: ${score}m / 配達: ${deliveryCount}件`;
         }
 
         document.getElementById('start-button').addEventListener('click', () => {
             document.getElementById('start-screen').style.display = 'none';
             gameState = 'PLAYING';
+            setRandomTarget();
         });
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
