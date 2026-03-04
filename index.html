@@ -117,8 +117,11 @@
         let direction = new THREE.Vector3(0, 0, -1);
         let targetPos = new THREE.Vector3();
         let targetGX = 0, targetGZ = 0;
+        let savedTargetPos = new THREE.Vector3();
+        let savedTargetGX = 0, savedTargetGZ = 0;
+        let savedMissionState = '';
         let immuneBuilding = null; 
-        let navLine; 
+        let navLine, subNavLine; 
 
         // --- 信号機管理 ---
         let trafficPhase = 0; // 0:NS青, 1:NS黄, 2:全赤, 3:EW青, 4:EW黄, 5:全赤
@@ -170,14 +173,13 @@
 
         // --- 3Dガイドラインの初期化 ---
         const navLineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
-        const navLineMat = new THREE.LineDashedMaterial({ 
-            color: 0xffff00, 
-            dashSize: 2, 
-            gapSize: 1,
-            linewidth: 3
-        });
+        const navLineMat = new THREE.LineDashedMaterial({ color: 0xffff00, dashSize: 2, gapSize: 1, linewidth: 3 });
         navLine = new THREE.Line(navLineGeo, navLineMat);
         scene.add(navLine);
+
+        const subNavLineMat = new THREE.LineDashedMaterial({ color: 0xaaaaaa, dashSize: 1, gapSize: 1, linewidth: 1, transparent: true, opacity: 0.5 });
+        subNavLine = new THREE.Line(navLineGeo.clone(), subNavLineMat);
+        scene.add(subNavLine);
 
         // --- 目的地マーカー ---
         const marker = new THREE.Group();
@@ -187,22 +189,35 @@
         ring.rotation.x = Math.PI/2; marker.add(ring);
         scene.add(marker);
 
-        function setRandomTarget() {
-            let spawnDist = 2; // 通常ミッションの距離
+        const subMarker = new THREE.Mesh(new THREE.TorusGeometry(4, 0.3, 16, 32), new THREE.MeshBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.6 }));
+        subMarker.rotation.x = Math.PI/2;
+        scene.add(subMarker);
+
+        function setRandomTarget(isRestoring = false) {
+            let spawnDist = 2; 
 
             if (fuel < 30 && missionState !== 'REFUEL') {
-                missionState = 'REFUEL';
-                spawnDist = 1; // ガソスタは近く（1ブロック先）に配置
+                // 現在のターゲットを退避
+                savedMissionState = missionState;
+                savedTargetPos.copy(targetPos);
+                savedTargetGX = targetGX;
+                savedTargetGZ = targetGZ;
                 
-                // 中央アラート表示
+                missionState = 'REFUEL';
+                spawnDist = 1; 
                 const alert = document.getElementById('center-alert');
                 alert.style.display = 'block';
                 setTimeout(() => { alert.style.display = 'none'; }, 2000);
+                
+                // ガソスタの位置を決める (現在の位置から1ブロック先)
+                targetGX = Math.round((cub.position.x / GRID_SIZE) + (Math.random() > 0.5 ? 1 : -1));
+                targetGZ = Math.round((cub.position.z / GRID_SIZE) + (Math.random() > 0.5 ? 1 : -1));
+            } else if (missionState !== 'REFUEL' && !isRestoring) {
+                // 通常のターゲット生成 (復元中でない場合のみ)
+                targetGX = Math.round((cub.position.x / GRID_SIZE) + (Math.random() > 0.5 ? spawnDist : -spawnDist));
+                targetGZ = Math.round((cub.position.z / GRID_SIZE) + (Math.random() > 0.5 ? spawnDist : -spawnDist));
             }
 
-            targetGX = Math.round((cub.position.x / GRID_SIZE) + (Math.random() > 0.5 ? spawnDist : -spawnDist));
-            targetGZ = Math.round((cub.position.z / GRID_SIZE) + (Math.random() > 0.5 ? spawnDist : -spawnDist));
-            
             const bOffset = 40; 
             targetPos.set(targetGX * GRID_SIZE - bOffset, 0, targetGZ * GRID_SIZE - bOffset);
             marker.position.copy(targetPos);
@@ -212,18 +227,26 @@
                 navLine.material.color.set(0xffff00);
                 document.getElementById('mission-text').innerText = "お店（黄色の建物）へ荷物を取りに行け！";
                 document.getElementById('mission-ui').style.color = "gold";
+                subMarker.visible = false; subNavLine.visible = false;
             } else if (missionState === 'DELIVERY') {
                 beam.material.color.set(0x00ffff); ring.material.color.set(0x00ffff);
                 navLine.material.color.set(0x00ffff);
                 document.getElementById('mission-text').innerText = "お届け先（青色の家）へ配達せよ！";
                 document.getElementById('mission-ui').style.color = "#00ffff";
+                subMarker.visible = false; subNavLine.visible = false;
             } else if (missionState === 'REFUEL') {
                 beam.material.color.set(0x00ff00); ring.material.color.set(0x00ff00);
                 navLine.material.color.set(0x00ff00);
                 document.getElementById('mission-text').innerText = "🚨 緊急！ガソスタ（緑色）で給油せよ！";
                 document.getElementById('mission-ui').style.color = "#32cd32";
+                
+                // 本来の目的地をサブ表示
+                subMarker.position.copy(savedTargetPos);
+                subMarker.visible = true;
+                subMarker.material.color.set(savedMissionState === 'PICKUP' ? 0xffff00 : 0x00ffff);
+                subNavLine.visible = true;
+                subNavLine.material.color.copy(subMarker.material.color);
             }
-            // 道路の再生成を促す
             roads.clear();
             while(scene.children.find(c => c.isRoad)) scene.remove(scene.children.find(c => c.isRoad));
             buildingMeshes.length = 0;
@@ -428,18 +451,22 @@
             // 建物
             const bSize = 30; const bOffset = 40;
             [[-1,-1], [1,-1], [-1,1], [1,1]].forEach(([sx, sz]) => {
-                const isTarget = (gx === targetGX && gz === targetGZ);
+                const isTarget = (gx === targetGX && gz === targetGZ && sx === -1 && sz === -1);
+                const isSavedTarget = (missionState === 'REFUEL' && gx === savedTargetGX && gz === savedTargetGZ && sx === -1 && sz === -1);
+                
                 const h = 10 + Math.random()*30;
                 let color = 0x777777;
                 let special = false;
                 
                 if (isTarget) {
-                    if (sx === -1 && sz === -1) {
-                        if (missionState === 'PICKUP') color = 0xffcc00;
-                        else if (missionState === 'DELIVERY') color = 0x00ccff;
-                        else if (missionState === 'REFUEL') color = 0x32cd32;
-                        special = true;
-                    }
+                    if (missionState === 'PICKUP') color = 0xffcc00;
+                    else if (missionState === 'DELIVERY') color = 0x00ccff;
+                    else if (missionState === 'REFUEL') color = 0x32cd32;
+                    special = true;
+                } else if (isSavedTarget) {
+                    if (savedMissionState === 'PICKUP') color = 0xffcc00;
+                    else if (savedMissionState === 'DELIVERY') color = 0x00ccff;
+                    special = true;
                 }
 
                 const b = new THREE.Mesh(new THREE.BoxGeometry(bSize, h, bSize), new THREE.MeshStandardMaterial({ color: color }));
@@ -473,36 +500,55 @@
                 const lz = (Math.round(cub.position.z/GRID_SIZE) + z) * GRID_SIZE - cub.position.z;
                 mapCtx.beginPath(); mapCtx.moveTo(-125, lz * mapScale); mapCtx.lineTo(125, lz * mapScale); mapCtx.stroke();
             }
-            const tx = (targetPos.x - cub.position.x) * mapScale;
-            const tz = (targetPos.z - cub.position.z) * mapScale;
+            
+            // ターゲット表示ロジック
+            const drawTargetIcon = (tx_val, tz_val, type) => {
+                const tx = (tx_val - cub.position.x) * mapScale;
+                const tz = (tz_val - cub.position.z) * mapScale;
+                
+                if (type === 'PICKUP') mapCtx.fillStyle = 'gold';
+                else if (type === 'DELIVERY') mapCtx.fillStyle = '#0ff';
+                else if (type === 'REFUEL') mapCtx.fillStyle = '#32cd32';
+                
+                mapCtx.shadowBlur = 15;
+                mapCtx.shadowColor = mapCtx.fillStyle;
+                mapCtx.beginPath();
+                mapCtx.moveTo(tx, tz - 12);
+                mapCtx.lineTo(tx - 8, tz + 6);
+                mapCtx.lineTo(tx + 8, tz + 6);
+                mapCtx.closePath();
+                mapCtx.fill();
+                mapCtx.shadowBlur = 0;
+            };
+
+            const tx_main = (targetPos.x - cub.position.x) * mapScale;
+            const tz_main = (targetPos.z - cub.position.z) * mapScale;
             
             // マップ上のガイドライン
             mapCtx.setLineDash([8, 4]);
             mapCtx.strokeStyle = missionState === 'PICKUP' ? 'gold' : (missionState === 'REFUEL' ? '#32cd32' : '#0ff');
-            mapCtx.lineWidth = 4; // 少し太くして見やすく
+            mapCtx.lineWidth = 4;
             mapCtx.beginPath();
             mapCtx.moveTo(0, 0); 
-            mapCtx.lineTo(tx, tz);
+            mapCtx.lineTo(tx_main, tz_main);
             mapCtx.stroke();
-            mapCtx.setLineDash([]);
 
-            // ターゲットアイコン (三角マーク)
-            if (missionState === 'PICKUP') mapCtx.fillStyle = 'gold';
-            else if (missionState === 'DELIVERY') mapCtx.fillStyle = '#0ff';
-            else if (missionState === 'REFUEL') mapCtx.fillStyle = '#32cd32';
+            // ガソスタミッション中の元目的地ガイド
+            if (missionState === 'REFUEL') {
+                const tx_sub = (savedTargetPos.x - cub.position.x) * mapScale;
+                const tz_sub = (savedTargetPos.z - cub.position.z) * mapScale;
+                mapCtx.strokeStyle = savedMissionState === 'PICKUP' ? 'rgba(255,215,0,0.5)' : 'rgba(0,255,255,0.5)';
+                mapCtx.lineWidth = 2;
+                mapCtx.beginPath();
+                mapCtx.moveTo(0, 0);
+                mapCtx.lineTo(tx_sub, tz_sub);
+                mapCtx.stroke();
+                drawTargetIcon(savedTargetPos.x, savedTargetPos.z, savedMissionState);
+            }
+
+            mapCtx.setLineDash([]);
+            drawTargetIcon(targetPos.x, targetPos.z, missionState);
             
-            mapCtx.shadowBlur = 15;
-            mapCtx.shadowColor = mapCtx.fillStyle;
-            
-            mapCtx.beginPath();
-            // 上向きの大きな三角形
-            mapCtx.moveTo(tx, tz - 12);
-            mapCtx.lineTo(tx - 8, tz + 6);
-            mapCtx.lineTo(tx + 8, tz + 6);
-            mapCtx.closePath();
-            mapCtx.fill();
-            
-            mapCtx.shadowBlur = 0;
             mapCtx.restore();
             mapCtx.fillStyle = '#0af'; mapCtx.beginPath(); mapCtx.arc(cx, cz, 5, 0, Math.PI*2); mapCtx.fill();
             mapCtx.beginPath(); mapCtx.moveTo(cx, cz-12); mapCtx.lineTo(cx-7, cz+2); mapCtx.lineTo(cx+7, cz+2); mapCtx.fill();
@@ -517,6 +563,7 @@
         window.addEventListener('keyup', e => keys[e.code] = false);
 
         function checkInteraction() {
+            // 現在のターゲットとのインタラクション
             if (cub.position.distanceTo(targetPos) < 30 && Math.abs(speed) < 0.1) {
                 immuneBuilding = targetPos.clone();
 
@@ -528,9 +575,12 @@
                     setRandomTarget(); nitroTimer = 300;
                 } else if (missionState === 'REFUEL') {
                     fuel = 100;
-                    // 元のミッションに戻る
-                    missionState = cub.cargo.visible ? 'DELIVERY' : 'PICKUP';
-                    setRandomTarget();
+                    // 元のミッションを復元
+                    missionState = savedMissionState;
+                    targetPos.copy(savedTargetPos);
+                    targetGX = savedTargetGX;
+                    targetGZ = savedTargetGZ;
+                    setRandomTarget(true); // 復元フラグを立ててUIを更新
                 }
             }
         }
@@ -665,23 +715,60 @@
 
                 npcCars.forEach((c, i) => {
                     // 信号と踏切のチェック
-                    const relX = Math.abs(c.mesh.position.x % GRID_SIZE);
-                    const relZ = Math.abs(c.mesh.position.z % GRID_SIZE);
-                    const nearIntersection = (relX < 20 || relX > GRID_SIZE - 20) && (relZ < 20 || relZ > GRID_SIZE - 20);
-                    const isRailway = (Math.round(c.mesh.position.z / GRID_SIZE) % 4 === 0);
+                    const gx = Math.round(c.mesh.position.x / GRID_SIZE);
+                    const gz = Math.round(c.mesh.position.z / GRID_SIZE);
+                    const relX = c.mesh.position.x % GRID_SIZE;
+                    const relZ = c.mesh.position.z % GRID_SIZE;
+                    // グリッド相対位置を 0〜GRID_SIZE に正規化 (負数対応)
+                    const normX = (relX + GRID_SIZE) % GRID_SIZE;
+                    const normZ = (relZ + GRID_SIZE) % GRID_SIZE;
+
+                    const isNS = Math.abs(c.dir.z) > Math.abs(c.dir.x);
+                    const isRailway = (gz % 4 === 0);
 
                     let shouldStop = false;
-                    if (nearIntersection) {
-                        const isNS = Math.abs(c.dir.z) > Math.abs(c.dir.x);
-                        if (isNS && trafficPhase !== 0) shouldStop = true;
-                        if (!isNS && trafficPhase !== 3) shouldStop = true;
+                    const stopDist = 18; // 交差点中心からの停止判定開始距離 (道路幅8 + 車長4 + マージン)
+                    
+                    if (isNS) {
+                        // 南北走行: Z座標の変化
+                        if (c.dir.z > 0) {
+                            // +Z方向: normZ が 120-stopDist 〜 120 の間なら停止線手前
+                            if (normZ > GRID_SIZE - stopDist && normZ < GRID_SIZE - 5) {
+                                if (trafficPhase !== 0) shouldStop = true;
+                            }
+                        } else {
+                            // -Z方向: normZ が 5 〜 stopDist の間なら停止線手前
+                            if (normZ < stopDist && normZ > 5) {
+                                if (trafficPhase !== 0) shouldStop = true;
+                            }
+                        }
+                    } else {
+                        // 東西走行: X座標の変化
+                        if (c.dir.x > 0) {
+                            // +X方向: normX が 120-stopDist 〜 120 の間
+                            if (normX > GRID_SIZE - stopDist && normX < GRID_SIZE - 5) {
+                                if (trafficPhase !== 3) shouldStop = true;
+                            }
+                        } else {
+                            // -X方向: normX が 5 〜 stopDist の間
+                            if (normX < stopDist && normX > 5) {
+                                if (trafficPhase !== 3) shouldStop = true;
+                            }
+                        }
                     }
                     
-                    if (isRailway) {
-                        const relZTrain = Math.abs(c.mesh.position.z % (GRID_SIZE * 4));
-                        if (relZTrain < 20 || relZTrain > (GRID_SIZE * 4) - 20) {
-                            const cycle = trainTimer % 800;
-                            if (cycle > 500 || cycle < 100) shouldStop = true;
+                    // 踏切のチェック (Z軸方向のみ)
+                    if (isRailway && isNS) {
+                        const relZTrain = (c.mesh.position.z % (GRID_SIZE * 4) + (GRID_SIZE * 4)) % (GRID_SIZE * 4);
+                        const cycle = trainTimer % 800;
+                        const isTrainComing = (cycle > 500 || cycle < 100);
+                        
+                        if (isTrainComing) {
+                            if (c.dir.z > 0 && relZTrain > (GRID_SIZE * 4) - stopDist && relZTrain < (GRID_SIZE * 4) - 5) {
+                                shouldStop = true;
+                            } else if (c.dir.z < 0 && relZTrain < stopDist && relZTrain > 5) {
+                                shouldStop = true;
+                            }
                         }
                     }
 
