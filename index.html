@@ -118,7 +118,12 @@
         let targetPos = new THREE.Vector3();
         let targetGX = 0, targetGZ = 0;
         let immuneBuilding = null; 
-        let navLine; // 3Dガイドライン
+        let navLine; 
+
+        // --- 信号機管理 ---
+        let trafficState = 'GREEN'; // 'GREEN' or 'RED'
+        let trafficTimer = 0;
+        const trafficLights = []; // 全ての信号機メッシュを保持
         
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -217,6 +222,38 @@
         // --- 道路・建物 ---
         const roads = new Map();
         const buildingMeshes = [];
+
+        function createTrafficLight(x, z, rotation) {
+            const group = new THREE.Group();
+            
+            // 柱
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 8), new THREE.MeshStandardMaterial({ color: 0x555555 }));
+            pole.position.y = 4;
+            group.add(pole);
+
+            // ライトの箱
+            const box = new THREE.Mesh(new THREE.BoxGeometry(1, 2.5, 1), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+            box.position.set(0, 7, 0);
+            group.add(box);
+
+            // 赤ライト
+            const redLight = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshBasicMaterial({ color: 0x330000 }));
+            redLight.position.set(0, 7.6, 0.51);
+            group.add(redLight);
+
+            // 青ライト
+            const greenLight = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+            greenLight.position.set(0, 6.4, 0.51);
+            group.add(greenLight);
+
+            group.position.set(x, 0, z);
+            group.rotation.y = rotation;
+            
+            const lightInfo = { group, red: redLight, green: greenLight };
+            trafficLights.push(lightInfo);
+            return group;
+        }
+
         function createRoadTile(gx, gz) {
             const group = new THREE.Group();
             group.isRoad = true;
@@ -228,6 +265,13 @@
             roadV.rotation.x = -Math.PI/2; group.add(roadV);
             const roadH = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, ROAD_WIDTH), new THREE.MeshStandardMaterial({ color: 0x333333 }));
             roadH.rotation.x = -Math.PI/2; group.add(roadH);
+
+            // 信号機の配置 (四隅)
+            const offset = 9;
+            group.add(createTrafficLight(-offset, -offset, 0));
+            group.add(createTrafficLight(offset, -offset, Math.PI));
+            group.add(createTrafficLight(offset, offset, Math.PI));
+            group.add(createTrafficLight(-offset, offset, 0));
 
             // 建物
             const bSize = 30; const bOffset = 40;
@@ -339,8 +383,23 @@
             }
         }
 
+        let hasViolated = false; // 現在の交差点で違反したか
+
         function update() {
             if (gameState === 'PLAYING') {
+                // 信号機の状態更新
+                trafficTimer++;
+                if (trafficTimer > 400) { // 約6-7秒ごとに切り替え
+                    trafficState = trafficState === 'GREEN' ? 'RED' : 'GREEN';
+                    trafficTimer = 0;
+                    
+                    // 信号機の見た目を一斉更新
+                    trafficLights.forEach(light => {
+                        light.red.material.color.set(trafficState === 'RED' ? 0xff0000 : 0x330000);
+                        light.green.material.color.set(trafficState === 'GREEN' ? 0x00ff00 : 0x003300);
+                    });
+                }
+
                 // アクセル・ブレーキ
                 if (keys['KeyW'] || keys['ArrowUp']) {
                     speed += ACCEL;
@@ -380,6 +439,29 @@
                     if (missionState !== 'REFUEL') setRandomTarget(); // 緊急ミッション発動
                 } else {
                     document.getElementById('fuel-fill').style.background = '#32cd32';
+                }
+
+                // 信号無視判定
+                const relX = Math.abs((cub.position.x + GRID_SIZE/2) % GRID_SIZE - GRID_SIZE/2);
+                const relZ = Math.abs((cub.position.z + GRID_SIZE/2) % GRID_SIZE - GRID_SIZE/2);
+                const nearIntersection = relX < 10 && relZ < 10;
+
+                if (nearIntersection) {
+                    if (trafficState === 'RED' && !hasViolated && Math.abs(speed) > 0.1) {
+                        fuel -= 20;
+                        hasViolated = true;
+                        
+                        // アラート表示
+                        const alert = document.getElementById('center-alert');
+                        alert.innerText = "🚨 信号無視！ -20 GAS";
+                        alert.style.display = 'block';
+                        setTimeout(() => { 
+                            alert.style.display = 'none'; 
+                            alert.innerText = "🚨 燃料不足！"; // 元に戻す
+                        }, 2000);
+                    }
+                } else {
+                    hasViolated = false; // 交差点を抜けたらリセット
                 }
 
                 const gx = Math.round(cub.position.x / GRID_SIZE);
