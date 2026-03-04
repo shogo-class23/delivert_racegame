@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>爆走！激辛デリバリー 3D</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Arial', sans-serif; background: #87CEEB; touch-action: none; }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); pointer-events: none; }
+        #speed { font-size: 24px; font-weight: bold; }
+        #nitro-bar { width: 200px; height: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; margin-top: 5px; overflow: hidden; }
+        #nitro-fill { width: 0%; height: 100%; background: #ff4500; transition: width 0.1s; }
+        #instructions { position: absolute; bottom: 20px; width: 100%; text-align: center; color: white; text-shadow: 1px 1px 2px black; font-size: 14px; pointer-events: none; }
+        #start-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 100; }
+        #start-button { padding: 15px 40px; font-size: 24px; background: #ff4500; border: none; border-radius: 30px; color: white; cursor: pointer; box-shadow: 0 5px 15px rgba(255,69,0,0.4); }
+        #game-over { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,0,0,0.4); display: none; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 101; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="speed">時速: 0 km/h</div>
+        <div>激辛ニトロ</div>
+        <div id="nitro-bar"><div id="nitro-fill"></div></div>
+        <div id="score" style="margin-top: 10px; font-size: 18px;">配達距離: 0m</div>
+    </div>
+
+    <div id="instructions">
+        PC: WASDで操作 / スマホ: 画面左右を長押しで移動
+    </div>
+
+    <div id="start-screen">
+        <h1 style="font-size: 48px; margin-bottom: 10px;">爆走！激辛デリバリー</h1>
+        <p style="margin-bottom: 30px;">唐辛子を拾って爆走せよ！障害物を避けろ！</p>
+        <button id="start-button">配達開始！</button>
+    </div>
+
+    <div id="game-over">
+        <h1 style="font-size: 64px;">事故発生！</h1>
+        <p id="final-score" style="font-size: 24px;"></p>
+        <button onclick="location.reload()" style="margin-top:20px; padding:10px 20px; font-size:18px;">もう一度配達する</button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- 設定 ---
+        const LANE_WIDTH = 4;
+        const SPEED_BASE = 0.5;
+        const SPEED_NITRO = 1.2;
+        const ROTATION_SPEED = 0.1;
+        
+        let gameState = 'START';
+        let speed = 0;
+        let nitroTimer = 0;
+        let score = 0;
+        let lane = 0; // -1, 0, 1
+        let targetX = 0;
+        
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // --- ライティング ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+        sunLight.position.set(10, 20, 10);
+        sunLight.castShadow = true;
+        scene.add(sunLight);
+
+        // --- オブジェクト作成関数 ---
+        function createCub() {
+            const group = new THREE.Group();
+            
+            // ボディ (カブの青いフレーム)
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(0.6, 0.8, 1.5),
+                new THREE.MeshStandardMaterial({ color: 0x0055aa })
+            );
+            body.position.y = 0.6;
+            body.castShadow = true;
+            group.add(body);
+
+            // シート
+            const seat = new THREE.Mesh(
+                new THREE.BoxGeometry(0.5, 0.1, 0.6),
+                new THREE.MeshStandardMaterial({ color: 0x222222 })
+            );
+            seat.position.set(0, 0.9, -0.1);
+            group.add(seat);
+
+            // 岡持ち (銀色の箱)
+            const box = new THREE.Mesh(
+                new THREE.BoxGeometry(0.7, 0.7, 0.5),
+                new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8, roughness: 0.2 })
+            );
+            box.position.set(0, 1.1, -0.6);
+            box.castShadow = true;
+            group.add(box);
+
+            // タイヤ
+            const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.2, 16);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+            
+            const frontWheel = new THREE.Mesh(wheelGeo, wheelMat);
+            frontWheel.rotation.z = Math.PI / 2;
+            frontWheel.position.set(0, 0.35, 0.8);
+            group.add(frontWheel);
+
+            const backWheel = new THREE.Mesh(wheelGeo, wheelMat);
+            backWheel.rotation.z = Math.PI / 2;
+            backWheel.position.set(0, 0.35, -0.8);
+            group.add(backWheel);
+
+            // ハンドル
+            const handle = new THREE.Mesh(
+                new THREE.BoxGeometry(1, 0.05, 0.05),
+                new THREE.MeshStandardMaterial({ color: 0x333333 })
+            );
+            handle.position.set(0, 1.2, 0.5);
+            group.add(handle);
+
+            return group;
+        }
+
+        const cub = createCub();
+        scene.add(cub);
+
+        // --- 地面 (スクロールする道) ---
+        const roadGroup = new THREE.Group();
+        scene.add(roadGroup);
+
+        function createRoadSegment(z) {
+            const segment = new THREE.Group();
+            
+            // アスファルト
+            const ground = new THREE.Mesh(
+                new THREE.PlaneGeometry(12, 20),
+                new THREE.MeshStandardMaterial({ color: 0x333333 })
+            );
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            segment.add(ground);
+
+            // 白線
+            const line = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.2, 10),
+                new THREE.MeshStandardMaterial({ color: 0xffffff })
+            );
+            line.rotation.x = -Math.PI / 2;
+            line.position.y = 0.01;
+            segment.add(line);
+
+            segment.position.z = z;
+            return segment;
+        }
+
+        for (let i = 0; i < 10; i++) {
+            roadGroup.add(createRoadSegment(-i * 20));
+        }
+
+        // --- 障害物とアイテム ---
+        const obstacles = [];
+        const items = [];
+
+        function spawnEntity() {
+            if (gameState !== 'PLAYING') return;
+
+            const laneX = (Math.floor(Math.random() * 3) - 1) * LANE_WIDTH;
+            const z = cub.position.z - 60;
+
+            if (Math.random() > 0.3) {
+                // 障害物 (三角コーン)
+                const cone = new THREE.Mesh(
+                    new THREE.ConeGeometry(0.5, 1, 8),
+                    new THREE.MeshStandardMaterial({ color: 0xff4500 })
+                );
+                cone.position.set(laneX, 0.5, z);
+                cone.castShadow = true;
+                scene.add(cone);
+                obstacles.push(cone);
+            } else {
+                // 唐辛子 (ニトロアイテム)
+                const chili = new THREE.Group();
+                const body = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.3, 8, 8),
+                    new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.5 })
+                );
+                chili.add(body);
+                const stem = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.1, 0.3, 0.1),
+                    new THREE.MeshStandardMaterial({ color: 0x00ff00 })
+                );
+                stem.position.y = 0.3;
+                chili.add(stem);
+                
+                chili.position.set(laneX, 0.7, z);
+                scene.add(chili);
+                items.push(chili);
+            }
+        }
+
+        setInterval(spawnEntity, 1000);
+
+        // --- 入力処理 ---
+        const keys = {};
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup', e => keys[e.code] = false);
+
+        let touchSide = null;
+        window.addEventListener('touchstart', e => {
+            const x = e.touches[0].clientX;
+            touchSide = x < window.innerWidth / 2 ? 'left' : 'right';
+        });
+        window.addEventListener('touchend', () => touchSide = null);
+
+        // --- ゲームループ ---
+        function update() {
+            if (gameState === 'PLAYING') {
+                // 操作
+                if (keys['KeyA'] || keys['ArrowLeft'] || touchSide === 'left') {
+                    cub.position.x -= 0.15;
+                    cub.rotation.z = Math.PI * 0.1;
+                } else if (keys['KeyD'] || keys['ArrowRight'] || touchSide === 'right') {
+                    cub.position.x += 0.15;
+                    cub.rotation.z = -Math.PI * 0.1;
+                } else {
+                    cub.rotation.z *= 0.9;
+                }
+
+                // 移動制限
+                cub.position.x = Math.max(-5, Math.min(5, cub.position.x));
+
+                // スピード更新
+                const targetSpeed = nitroTimer > 0 ? SPEED_NITRO : SPEED_BASE;
+                speed += (targetSpeed - speed) * 0.1;
+                cub.position.z -= speed;
+
+                // ニトロタイマー
+                if (nitroTimer > 0) {
+                    nitroTimer -= 1;
+                    document.getElementById('nitro-fill').style.width = (nitroTimer / 180 * 100) + '%';
+                    // エフェクトっぽくバイクを揺らす
+                    cub.position.y = 0 + Math.sin(Date.now() * 0.05) * 0.05;
+                } else {
+                    document.getElementById('nitro-fill').style.width = '0%';
+                    cub.position.y = 0;
+                }
+
+                // スコア
+                score += Math.floor(speed * 10);
+                document.getElementById('score').innerText = `配達距離: ${score}m`;
+                document.getElementById('speed').innerText = `時速: ${Math.floor(speed * 120)} km/h`;
+
+                // カメラ追従
+                camera.position.set(cub.position.x * 0.5, cub.position.y + 3, cub.position.z + 6);
+                camera.lookAt(cub.position.x, cub.position.y + 1, cub.position.z - 5);
+
+                // 道路のループ
+                roadGroup.children.forEach(seg => {
+                    if (seg.position.z > camera.position.z + 20) {
+                        seg.position.z -= 200;
+                    }
+                });
+
+                // 衝突判定
+                obstacles.forEach((obs, index) => {
+                    if (cub.position.distanceTo(obs.position) < 1) {
+                        gameState = 'GAMEOVER';
+                        document.getElementById('game-over').style.display = 'flex';
+                        document.getElementById('final-score').innerText = `記録: ${score}m`;
+                    }
+                    if (obs.position.z > camera.position.z + 10) {
+                        scene.remove(obs);
+                        obstacles.splice(index, 1);
+                    }
+                });
+
+                // アイテム取得
+                items.forEach((item, index) => {
+                    item.rotation.y += 0.05;
+                    if (cub.position.distanceTo(item.position) < 1.2) {
+                        nitroTimer = 180; // 約3秒
+                        scene.remove(item);
+                        items.splice(index, 1);
+                    }
+                    if (item.position.z > camera.position.z + 10) {
+                        scene.remove(item);
+                        items.splice(index, 1);
+                    }
+                });
+            }
+
+            renderer.render(scene, camera);
+            requestAnimationFrame(update);
+        }
+
+        // --- 開始処理 ---
+        document.getElementById('start-button').addEventListener('click', () => {
+            document.getElementById('start-screen').style.display = 'none';
+            gameState = 'PLAYING';
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        update();
+    </script>
+</body>
+</html>
