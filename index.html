@@ -126,8 +126,9 @@
         let trafficLights = []; 
 
         // --- 電車管理 ---
-        const trains = []; // { mesh, lineGZ }
+        const trains = []; 
         let trainTimer = 0;
+        const crossingGates = []; // { bar, lights, lineGZ }
         
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -303,6 +304,50 @@
             return group;
         }
 
+        function createCrossing(x, z, gz) {
+            const group = new THREE.Group();
+            
+            // 踏切の柱 (左右に2つ)
+            [-1, 1].forEach(side => {
+                const pGroup = new THREE.Group();
+                pGroup.position.set(side * 8, 0, 0);
+                
+                // 柱
+                const pole = new THREE.Mesh(new THREE.BoxGeometry(0.5, 8, 0.5), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+                pole.position.y = 4; pGroup.add(pole);
+
+                // 警告灯の箱
+                const box = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 0.5), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+                box.position.y = 6; pGroup.add(box);
+
+                // 警告灯 (赤2つ)
+                const l1 = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshBasicMaterial({ color: 0x330000 }));
+                l1.position.set(-0.5, 6, 0.26); pGroup.add(l1);
+                const l2 = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshBasicMaterial({ color: 0x330000 }));
+                l2.position.set(0.5, 6, 0.26); pGroup.add(l2);
+
+                // 遮断機の棒 (黄色と黒)
+                const barGroup = new THREE.Group();
+                barGroup.position.set(0, 4, 0);
+                const bar = new THREE.Mesh(new THREE.BoxGeometry(8, 0.3, 0.3), new THREE.MeshStandardMaterial({ color: 0xffff00 }));
+                bar.position.x = -side * 4;
+                barGroup.add(bar);
+                // 黒い縞模様（簡易的に）
+                for(let i=0; i<4; i++) {
+                    const stripe = new THREE.Mesh(new THREE.BoxGeometry(1, 0.35, 0.35), new THREE.MeshStandardMaterial({ color: 0x000000 }));
+                    stripe.position.x = -side * (i * 2 + 1);
+                    barGroup.add(stripe);
+                }
+                pGroup.add(barGroup);
+
+                group.add(pGroup);
+                crossingGates.push({ barGroup, lights: [l1, l2], gz: gz, side: side });
+            });
+
+            group.position.set(x, 0, z);
+            return group;
+        }
+
         function createRoadTile(gx, gz) {
             const group = new THREE.Group();
             group.isRoad = true;
@@ -314,24 +359,21 @@
             const roadV = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, GRID_SIZE), new THREE.MeshStandardMaterial({ color: 0x333333 }));
             roadV.rotation.x = -Math.PI/2; group.add(roadV);
 
-            // 4ブロックごとに東西方向を線路にする
             const isRailway = (gz % 4 === 0);
             if (isRailway) {
-                // 線路の砂利
                 const ballast = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, 10), new THREE.MeshStandardMaterial({ color: 0x555555 }));
                 ballast.rotation.x = -Math.PI/2; ballast.position.y = 0.01; group.add(ballast);
-                // レール
                 const railGeo = new THREE.BoxGeometry(GRID_SIZE, 0.3, 0.3);
                 const railMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 1 });
                 const r1 = new THREE.Mesh(railGeo, railMat); r1.position.set(0, 0.4, -2); group.add(r1);
                 const r2 = new THREE.Mesh(railGeo, railMat); r2.position.set(0, 0.4, 2); group.add(r2);
-                // 枕木
-                const sleeperGeo = new THREE.BoxGeometry(0.5, 0.2, 6);
-                const sleeperMat = new THREE.MeshStandardMaterial({ color: 0x442200 });
                 for(let i=-10; i<=10; i++) {
-                    const s = new THREE.Mesh(sleeperGeo, sleeperMat);
+                    const s = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 6), new THREE.MeshStandardMaterial({ color: 0x442200 }));
                     s.position.set(i * 6, 0.2, 0); group.add(s);
                 }
+                // 踏切を追加
+                group.add(createCrossing(0, -8, gz)); // 北側
+                group.add(createCrossing(0, 8, gz));  // 南側
             } else {
                 const roadH = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, ROAD_WIDTH), new THREE.MeshStandardMaterial({ color: 0x333333 }));
                 roadH.rotation.x = -Math.PI/2; group.add(roadH);
@@ -488,36 +530,58 @@
                 };
                 updateLights();
 
-                // 電車のアニメーション
+                // 電車・踏切のアニメーション
                 trainTimer++;
-                if (trainTimer % 600 === 0) { // 定期的に電車を走らせる
-                    const lineGZ = Math.round(cub.position.z / (GRID_SIZE * 4)) * 4;
-                    const train = createTrain();
-                    train.position.set(-1000, 3, lineGZ * GRID_SIZE);
-                    trains.push({ mesh: train, lineGZ: lineGZ });
-                    
-                    // アラート表示 (電車が来る前の警告)
-                    if (Math.abs(cub.position.z - lineGZ * GRID_SIZE) < 150) {
-                        const alert = document.getElementById('center-alert');
-                        alert.innerText = "⚠️ 踏切注意！電車通過";
-                        alert.style.display = 'block';
-                        setTimeout(() => { if (alert.innerText.includes("踏切")) alert.style.display = 'none'; }, 2000);
+                const cycle = trainTimer % 800;
+                const isTrainApproaching = (cycle > 500 && cycle < 750);
+                const isTrainPassing = (cycle >= 750 || cycle <= 50);
+
+                // 踏切の更新
+                for (let i = crossingGates.length - 1; i >= 0; i--) {
+                    const g = crossingGates[i];
+                    if (g.barGroup.parent === null || g.barGroup.parent.parent === null) {
+                        crossingGates.splice(i, 1); continue;
+                    }
+
+                    // 遮断機の開閉
+                    const targetRot = isTrainApproaching || isTrainPassing ? Math.PI / 2 : 0;
+                    g.barGroup.rotation.z += (targetRot - g.barGroup.rotation.z) * 0.05;
+
+                    // 警告灯の点滅
+                    if (isTrainApproaching || isTrainPassing) {
+                        const flash = Math.floor(Date.now() / 300) % 2;
+                        g.lights[0].material.color.set(flash === 0 ? 0xff0000 : 0x330000);
+                        g.lights[1].material.color.set(flash === 1 ? 0xff0000 : 0x330000);
+                    } else {
+                        g.lights[0].material.color.set(0x330000);
+                        g.lights[1].material.color.set(0x330000);
+                    }
+
+                    // 遮断機への衝突判定 (閉じている時のみ)
+                    if (g.barGroup.rotation.z > 1.0) {
+                        const gateWorldPos = new THREE.Vector3();
+                        g.barGroup.getWorldPosition(gateWorldPos);
+                        if (Math.abs(cub.position.x - gateWorldPos.x) < 8 && Math.abs(cub.position.z - gateWorldPos.z) < 2) {
+                            endGame("踏切強行突破で事故");
+                        }
                     }
                 }
 
+                if (cycle === 750) { // 電車スポーン
+                    const lineGZ = Math.round(cub.position.z / (GRID_SIZE * 4)) * 4;
+                    const train = createTrain();
+                    train.position.set(-1000, 3, lineGZ * GRID_SIZE);
+                    trains.push({ mesh: train });
+                }
+
                 trains.forEach((t, i) => {
-                    t.mesh.position.x += 10; // 電車のスピード
-                    // 電車との衝突判定
-                    const distToTrain = cub.position.distanceTo(t.mesh.position);
-                    // 電車は長いので、x座標の範囲でチェック
+                    t.mesh.position.x += 15; // 電車のスピードアップ
                     const relX = cub.position.x - t.mesh.position.x;
-                    if (Math.abs(cub.position.z - t.mesh.position.z) < 6 && relX > 0 && relX < 200) {
+                    if (Math.abs(cub.position.z - t.mesh.position.z) < 8 && relX > 0 && relX < 200) {
                         endGame("電車に撥ねられました");
                     }
-                    // 遠くへ行ったら削除
                     if (t.mesh.position.x > 1000) {
-                        scene.remove(t.mesh);
-                        trains.splice(i, 1);
+                        scene.remove(t.mesh); trains.splice(i, 1);
                     }
                 });
 
