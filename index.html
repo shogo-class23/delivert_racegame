@@ -405,7 +405,8 @@
             }
         }
 
-        let hasViolated = false; // 現在の交差点で違反したか
+        let hasViolated = false; 
+        let intersectionProcessed = false; // 現在の交差点の判定が終了したか
 
         function update() {
             if (gameState === 'PLAYING') {
@@ -479,47 +480,39 @@
                     document.getElementById('fuel-fill').style.background = '#32cd32';
                 }
 
-                // 信号無視判定
+                // 信号無視判定 (進入時のみチェック)
                 const relX = Math.abs((cub.position.x + GRID_SIZE/2) % GRID_SIZE - GRID_SIZE/2);
                 const relZ = Math.abs((cub.position.z + GRID_SIZE/2) % GRID_SIZE - GRID_SIZE/2);
-                const inIntersection = relX < 15 && relZ < 15; // 判定範囲を少し広げる
+                const inIntersection = relX < 15 && relZ < 15;
 
                 if (inIntersection) {
-                    if (!hasViolated && Math.abs(speed) > 0.1) {
-                        // プレイヤーの向きを判定 (Vector3の向きから)
+                    if (!intersectionProcessed && Math.abs(speed) > 0.1) {
+                        // 進入した瞬間の向きで判定
                         const isMovingNS = Math.abs(direction.z) > Math.abs(direction.x);
-                        let isIllegal = false;
+                        let isLegal = false;
 
                         if (isMovingNS) {
-                            // 南北走行中: フェーズ0以外(黄、赤、EW側青)はすべて違反
-                            if (trafficPhase !== 0) isIllegal = true;
+                            if (trafficPhase === 0) isLegal = true; // 南北が青ならOK
                         } else {
-                            // 東西走行中: フェーズ3以外(黄、赤、NS側青)はすべて違反
-                            if (trafficPhase !== 3) isIllegal = true;
+                            if (trafficPhase === 3) isLegal = true; // 東西が青ならOK
                         }
 
-                        if (isIllegal) {
+                        if (!isLegal) {
                             fuel -= 20;
-                            hasViolated = true;
-                            
-                            // 強制的にアラートを表示
+                            // アラート表示
                             const alert = document.getElementById('center-alert');
                             alert.innerText = "🚨 信号無視！ -20 GAS";
                             alert.style.display = 'block';
-                            
-                            // アニメーションのリセット
                             alert.style.animation = 'none';
                             alert.offsetHeight; // reflow
                             alert.style.animation = null;
-
-                            setTimeout(() => { 
-                                alert.style.display = 'none'; 
-                                alert.innerText = "🚨 燃料不足！"; 
-                            }, 2000);
+                            setTimeout(() => { alert.style.display = 'none'; alert.innerText = "🚨 燃料不足！"; }, 2000);
                         }
+                        
+                        intersectionProcessed = true; // この交差点の判定は完了
                     }
                 } else {
-                    hasViolated = false;
+                    intersectionProcessed = false; // 交差点を抜けたら次へ向けてリセット
                 }
 
                 const gx = Math.round(cub.position.x / GRID_SIZE);
