@@ -140,14 +140,28 @@
             const roadH = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, ROAD_WIDTH), new THREE.MeshStandardMaterial({ color: 0x333333 }));
             roadH.rotation.x = -Math.PI/2; group.add(roadH);
 
-            // 建物
-            for(let i=0; i<8; i++) {
-                const h = 10 + Math.random()*20;
-                const b = new THREE.Mesh(new THREE.BoxGeometry(15, h, 15), new THREE.MeshStandardMaterial({ color: 0x777777 }));
-                const angle = (i / 8) * Math.PI * 2;
-                const dist = 25 + Math.random()*10;
-                b.position.set(Math.cos(angle)*dist, h/2, Math.sin(angle)*dist);
-                group.add(b);
+            // 建物 (四隅のブロックに整列して配置)
+            const bSize = 12;
+            const bSpacing = 18;
+            for(let bx=-1; bx<=1; bx+=2) {
+                for(let bz=-1; bz<=1; bz+=2) {
+                    // 各コーナーに2つずつ建物を配置
+                    for(let i=0; i<2; i++) {
+                        const h = 10 + Math.random() * 25;
+                        const bGeo = new THREE.BoxGeometry(bSize, h, bSize);
+                        const bMat = new THREE.MeshStandardMaterial({ 
+                            color: new THREE.Color().setHSL(Math.random(), 0.2, 0.4) 
+                        });
+                        const b = new THREE.Mesh(bGeo, bMat);
+                        
+                        // 道路(12m幅)を避けた位置に配置
+                        const posX = bx * (15 + (i * bSpacing));
+                        const posZ = bz * 20;
+                        b.position.set(posX, h/2, posZ);
+                        b.castShadow = true;
+                        group.add(b);
+                    }
+                }
             }
 
             group.position.set(rx, 0, rz);
