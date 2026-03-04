@@ -13,11 +13,12 @@
         #instructions { position: absolute; bottom: 20px; width: 100%; text-align: center; color: white; text-shadow: 1px 1px 2px black; font-size: 14px; pointer-events: none; }
         
         #map-container {
-            position: absolute; bottom: 20px; right: 20px; width: 140px; height: 140px;
-            background: rgba(0, 0, 0, 0.7); border: 2px solid #555; border-radius: 10px; overflow: hidden;
+            position: absolute; bottom: 20px; right: 20px; width: 250px; height: 250px;
+            background: rgba(0, 0, 0, 0.6); border: 3px solid #0f0; border-radius: 15px; overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.2);
         }
         #map-canvas { width: 100%; height: 100%; }
-        #map-label { position: absolute; top: 2px; width: 100%; text-align: center; color: #0f0; font-size: 10px; font-family: monospace; }
+        #map-label { position: absolute; top: 5px; width: 100%; text-align: center; color: #0f0; font-size: 14px; font-weight: bold; font-family: monospace; letter-spacing: 2px; }
 
         #start-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 100; }
         #start-button { padding: 15px 40px; font-size: 24px; background: #ff4500; border: none; border-radius: 30px; color: white; cursor: pointer; }
@@ -177,13 +178,56 @@
         // --- マップ ---
         const mapCanvas = document.getElementById('map-canvas');
         const mapCtx = mapCanvas.getContext('2d');
+        mapCanvas.width = 250;
+        mapCanvas.height = 250;
+
         function updateMap() {
-            mapCtx.clearRect(0,0,140,140);
-            mapCtx.fillStyle = 'rgba(0,0,0,0.5)'; mapCtx.fillRect(0,0,140,140);
-            const cx=70, cz=70;
-            mapCtx.save(); mapCtx.translate(cx, cz); mapCtx.rotate(-currentRotationY);
-            mapCtx.fillStyle = '#0af'; mapCtx.beginPath(); mapCtx.moveTo(0,-6); mapCtx.lineTo(-5,6); mapCtx.lineTo(5,6); mapCtx.fill();
+            mapCtx.clearRect(0,0,250,250);
+            mapCtx.fillStyle = 'rgba(0, 20, 0, 0.8)'; mapCtx.fillRect(0,0,250,250);
+            
+            const cx=125, cz=125;
+            const mapScale = 0.4; // 1m = 0.4px
+
+            mapCtx.save();
+            mapCtx.translate(cx, cz);
+            mapCtx.rotate(-currentRotationY);
+
+            // 道路の線を描画
+            mapCtx.strokeStyle = '#004400';
+            mapCtx.lineWidth = 1;
+            for(let x=-3; x<=3; x++) {
+                const lx = (Math.round(cub.position.x/GRID_SIZE) + x) * GRID_SIZE - cub.position.x;
+                mapCtx.beginPath(); mapCtx.moveTo(lx * mapScale, -125); mapCtx.lineTo(lx * mapScale, 125); mapCtx.stroke();
+            }
+            for(let z=-3; z<=3; z++) {
+                const lz = (Math.round(cub.position.z/GRID_SIZE) + z) * GRID_SIZE - cub.position.z;
+                mapCtx.beginPath(); mapCtx.moveTo(-125, lz * mapScale); mapCtx.lineTo(125, lz * mapScale); mapCtx.stroke();
+            }
+
+            // 太いメイン道路（現在地付近）
+            mapCtx.strokeStyle = '#008800';
+            mapCtx.lineWidth = 3;
+            const rx = (Math.round(cub.position.x/GRID_SIZE) * GRID_SIZE - cub.position.x) * mapScale;
+            const rz = (Math.round(cub.position.z/GRID_SIZE) * GRID_SIZE - cub.position.z) * mapScale;
+            mapCtx.beginPath(); mapCtx.moveTo(rx, -125); mapCtx.lineTo(rx, 125); mapCtx.stroke();
+            mapCtx.beginPath(); mapCtx.moveTo(-125, rz); mapCtx.lineTo(125, rz); mapCtx.stroke();
+
             mapCtx.restore();
+
+            // プレイヤー位置 (中央固定)
+            mapCtx.fillStyle = '#0af';
+            mapCtx.shadowBlur = 10; mapCtx.shadowColor = '#0af';
+            mapCtx.beginPath();
+            mapCtx.arc(cx, cz, 4, 0, Math.PI * 2);
+            mapCtx.fill();
+            
+            // 向きを示す三角形
+            mapCtx.beginPath();
+            mapCtx.moveTo(cx, cz - 10);
+            mapCtx.lineTo(cx - 6, cz + 2);
+            mapCtx.lineTo(cx + 6, cz + 2);
+            mapCtx.fill();
+            mapCtx.shadowBlur = 0;
         }
 
         // --- ループ ---
