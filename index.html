@@ -121,9 +121,9 @@
         let navLine; 
 
         // --- 信号機管理 ---
-        let trafficState = 'GREEN'; // 'GREEN' or 'RED'
+        let trafficState = 'GREEN'; // 'GREEN', 'YELLOW', 'RED'
         let trafficTimer = 0;
-        const trafficLights = []; // 全ての信号機メッシュを保持
+        const trafficLights = []; 
         
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -223,34 +223,42 @@
         const roads = new Map();
         const buildingMeshes = [];
 
-        function createTrafficLight(x, z, rotation) {
+        function createTrafficLight(x, z) {
             const group = new THREE.Group();
             
             // 柱
-            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 8), new THREE.MeshStandardMaterial({ color: 0x555555 }));
-            pole.position.y = 4;
-            group.add(pole);
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 10), new THREE.MeshStandardMaterial({ color: 0x444444 }));
+            pole.position.y = 5; group.add(pole);
 
-            // ライトの箱
-            const box = new THREE.Mesh(new THREE.BoxGeometry(1, 2.5, 1), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-            box.position.set(0, 7, 0);
-            group.add(box);
+            // ライトの箱 (少し大きくして四角く)
+            const box = new THREE.Mesh(new THREE.BoxGeometry(1.5, 4, 1.5), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+            box.position.set(0, 9, 0); group.add(box);
 
-            // 赤ライト
-            const redLight = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshBasicMaterial({ color: 0x330000 }));
-            redLight.position.set(0, 7.6, 0.51);
-            group.add(redLight);
+            const lights = { red: [], yellow: [], green: [] };
 
-            // 青ライト
-            const greenLight = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
-            greenLight.position.set(0, 6.4, 0.51);
-            group.add(greenLight);
+            // 4方向すべてにライトを配置
+            for(let i=0; i<4; i++) {
+                const angle = i * (Math.PI / 2);
+                const lGroup = new THREE.Group();
+                lGroup.rotation.y = angle;
+
+                // 赤ライト
+                const r = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshStandardMaterial({ color: 0x330000, emissive: 0xff0000, emissiveIntensity: 0 }));
+                r.position.set(0, 10.2, 0.76); lGroup.add(r); lights.red.push(r);
+
+                // 黄ライト
+                const y = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshStandardMaterial({ color: 0x333300, emissive: 0xffff00, emissiveIntensity: 0 }));
+                y.position.set(0, 9, 0.76); lGroup.add(y); lights.yellow.push(y);
+
+                // 青ライト
+                const g = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshStandardMaterial({ color: 0x003300, emissive: 0x00ff00, emissiveIntensity: 0.5 }));
+                g.position.set(0, 7.8, 0.76); lGroup.add(g); lights.green.push(g);
+
+                group.add(lGroup);
+            }
 
             group.position.set(x, 0, z);
-            group.rotation.y = rotation;
-            
-            const lightInfo = { group, red: redLight, green: greenLight };
-            trafficLights.push(lightInfo);
+            trafficLights.push(lights);
             return group;
         }
 
@@ -268,10 +276,10 @@
 
             // 信号機の配置 (四隅)
             const offset = 9;
-            group.add(createTrafficLight(-offset, -offset, 0));
-            group.add(createTrafficLight(offset, -offset, Math.PI));
-            group.add(createTrafficLight(offset, offset, Math.PI));
-            group.add(createTrafficLight(-offset, offset, 0));
+            group.add(createTrafficLight(-offset, -offset));
+            group.add(createTrafficLight(offset, -offset));
+            group.add(createTrafficLight(offset, offset));
+            group.add(createTrafficLight(-offset, offset));
 
             // 建物
             const bSize = 30; const bOffset = 40;
@@ -389,16 +397,19 @@
             if (gameState === 'PLAYING') {
                 // 信号機の状態更新
                 trafficTimer++;
-                if (trafficTimer > 400) { // 約6-7秒ごとに切り替え
-                    trafficState = trafficState === 'GREEN' ? 'RED' : 'GREEN';
-                    trafficTimer = 0;
+                const nextState = () => {
+                    if (trafficState === 'GREEN' && trafficTimer > 400) { trafficState = 'YELLOW'; trafficTimer = 0; }
+                    else if (trafficState === 'YELLOW' && trafficTimer > 150) { trafficState = 'RED'; trafficTimer = 0; }
+                    else if (trafficState === 'RED' && trafficTimer > 400) { trafficState = 'GREEN'; trafficTimer = 0; }
                     
                     // 信号機の見た目を一斉更新
-                    trafficLights.forEach(light => {
-                        light.red.material.color.set(trafficState === 'RED' ? 0xff0000 : 0x330000);
-                        light.green.material.color.set(trafficState === 'GREEN' ? 0x00ff00 : 0x003300);
+                    trafficLights.forEach(l => {
+                        l.red.forEach(m => m.emissiveIntensity = trafficState === 'RED' ? 1 : 0);
+                        l.yellow.forEach(m => m.emissiveIntensity = trafficState === 'YELLOW' ? 1 : 0);
+                        l.green.forEach(m => m.emissiveIntensity = trafficState === 'GREEN' ? 1 : 0);
                     });
-                }
+                };
+                nextState();
 
                 // アクセル・ブレーキ
                 if (keys['KeyW'] || keys['ArrowUp']) {
