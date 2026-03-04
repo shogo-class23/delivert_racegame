@@ -117,7 +117,8 @@
         let direction = new THREE.Vector3(0, 0, -1);
         let targetPos = new THREE.Vector3();
         let targetGX = 0, targetGZ = 0;
-        let immuneBuilding = null; // アクション直後に衝突判定を一時的に無効にする建物
+        let immuneBuilding = null; 
+        let navLine; // 3Dガイドライン
         
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -152,6 +153,17 @@
         cub.scale.set(1.8, 1.8, 1.8);
         scene.add(cub);
 
+        // --- 3Dガイドラインの初期化 ---
+        const navLineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+        const navLineMat = new THREE.LineDashedMaterial({ 
+            color: 0xffff00, 
+            dashSize: 2, 
+            gapSize: 1,
+            linewidth: 3
+        });
+        navLine = new THREE.Line(navLineGeo, navLineMat);
+        scene.add(navLine);
+
         // --- 目的地マーカー ---
         const marker = new THREE.Group();
         const beam = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 200, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
@@ -182,14 +194,17 @@
             
             if (missionState === 'PICKUP') {
                 beam.material.color.set(0xffff00); ring.material.color.set(0xffff00);
+                navLine.material.color.set(0xffff00);
                 document.getElementById('mission-text').innerText = "お店（黄色の建物）へ荷物を取りに行け！";
                 document.getElementById('mission-ui').style.color = "gold";
             } else if (missionState === 'DELIVERY') {
                 beam.material.color.set(0x00ffff); ring.material.color.set(0x00ffff);
+                navLine.material.color.set(0x00ffff);
                 document.getElementById('mission-text').innerText = "お届け先（青色の家）へ配達せよ！";
                 document.getElementById('mission-ui').style.color = "#00ffff";
             } else if (missionState === 'REFUEL') {
                 beam.material.color.set(0x00ff00); ring.material.color.set(0x00ff00);
+                navLine.material.color.set(0x00ff00);
                 document.getElementById('mission-text').innerText = "🚨 緊急！ガソスタ（緑色）で給油せよ！";
                 document.getElementById('mission-ui').style.color = "#32cd32";
             }
@@ -271,6 +286,16 @@
             const tx = (targetPos.x - cub.position.x) * mapScale;
             const tz = (targetPos.z - cub.position.z) * mapScale;
             
+            // マップ上のガイドライン
+            mapCtx.setLineDash([5, 5]);
+            mapCtx.strokeStyle = mapCtx.fillStyle = missionState === 'PICKUP' ? 'gold' : (missionState === 'REFUEL' ? '#32cd32' : '#0ff');
+            mapCtx.lineWidth = 2;
+            mapCtx.beginPath();
+            mapCtx.moveTo(0, 0); // プレイヤー位置 (cx, cz に translate 済み)
+            mapCtx.lineTo(tx, tz);
+            mapCtx.stroke();
+            mapCtx.setLineDash([]);
+
             // ターゲットアイコン (三角マーク)
             if (missionState === 'PICKUP') mapCtx.fillStyle = 'gold';
             else if (missionState === 'DELIVERY') mapCtx.fillStyle = '#0ff';
@@ -409,6 +434,14 @@
                 });
 
                 ring.rotation.z += 0.05;
+
+                // 3Dガイドラインの更新
+                const points = [
+                    cub.position.clone().add(new THREE.Vector3(0, 0.5, 0)),
+                    targetPos.clone().add(new THREE.Vector3(0, 0.5, 0))
+                ];
+                navLine.geometry.setFromPoints(points);
+                navLine.computeLineDistances(); // 点線を描画するために必要
             }
             updateMap();
             renderer.render(scene, camera);
