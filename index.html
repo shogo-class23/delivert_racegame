@@ -173,12 +173,13 @@
             const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 1.5), new THREE.MeshStandardMaterial({ color: 0x0055aa }));
             body.position.y = 0.6; group.add(body);
             const cargo = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), new THREE.MeshStandardMaterial({ color: 0xffaa00 }));
-            cargo.position.set(0, 1.3, -0.6); cargo.visible = false; group.add(cargo);
+            cargo.position.set(0, 1.3, 0.6); // 背面に配置
+            cargo.visible = false; group.add(cargo);
             group.cargo = cargo;
             const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.2, 16);
             const front = new THREE.Mesh(wheelGeo, new THREE.MeshStandardMaterial({ color: 0x111111 }));
-            front.rotation.z = Math.PI/2; front.position.set(0, 0.35, 0.8); group.add(front);
-            const back = front.clone(); back.position.set(0, 0.35, -0.8); group.add(back);
+            front.rotation.z = Math.PI/2; front.position.set(0, 0.35, -0.8); group.add(front); // 前輪
+            const back = front.clone(); back.position.set(0, 0.35, 0.8); group.add(back); // 後輪
             return group;
         }
 
@@ -192,10 +193,11 @@
             const winMat = new THREE.MeshBasicMaterial({ color: 0x88ffff, transparent: true, opacity: 0.6 });
             const win = new THREE.Mesh(winGeo, winMat);
             win.position.y = 2.0; group.add(win);
-            // タイヤ (6輪)
+            // タイヤ (6輪) - 前方に1対、後方に2対
             const wheelGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.5, 16);
             const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-            [[-1, 0, 3], [1, 0, 3], [-1, 0, -2], [1, 0, -2], [-1, 0, -3.5], [1, 0, -3.5]].forEach(([x,y,z]) => {
+            [[-1, 0, -3], [1, 0, -3], // 前輪
+             [-1, 0, 2], [1, 0, 2], [-1, 0, 3.5], [1, 0, 3.5]].forEach(([x,y,z]) => {
                 const w = new THREE.Mesh(wheelGeo, wheelMat);
                 w.rotation.z = Math.PI/2; w.position.set(x * 1.2, 0.6, z); group.add(w);
             });
@@ -213,6 +215,7 @@
                 playerVehicle.scale.set(1.2, 1.2, 1.2);
             }
             playerVehicle.position.set(-4, 0, 40);
+            currentRotationY = 0; // 初期向きをリセット
             scene.add(playerVehicle);
         }
 
@@ -564,50 +567,47 @@
                 mapCtx.beginPath(); mapCtx.moveTo(-125, lz * mapScale); mapCtx.lineTo(125, lz * mapScale); mapCtx.stroke();
             }
             
-            // ターゲット表示ロジック
-            const drawTargetIcon = (tx_val, tz_val, type) => {
-                const tx = (tx_val - playerVehicle.position.x) * mapScale;
-                const tz = (tz_val - playerVehicle.position.z) * mapScale;
-                
-                if (type === 'PICKUP') mapCtx.fillStyle = 'gold';
-                else if (type === 'DELIVERY') mapCtx.fillStyle = '#0ff';
-                else if (type === 'REFUEL') mapCtx.fillStyle = '#32cd32';
-                else if (type === 'BUSSTOP') mapCtx.fillStyle = '#00ffff';
-                
-                mapCtx.shadowBlur = 15;
-                mapCtx.shadowColor = mapCtx.fillStyle;
-                mapCtx.beginPath();
-                mapCtx.moveTo(tx, tz - 12);
-                mapCtx.lineTo(tx - 8, tz + 6);
-                mapCtx.lineTo(tx + 8, tz + 6);
-                mapCtx.closePath();
-                mapCtx.fill();
-                mapCtx.shadowBlur = 0;
-            };
+            const toMapX = (rx) => (rx - playerVehicle.position.x) * mapScale;
+            const toMapZ = (rz) => (rz - playerVehicle.position.z) * mapScale;
 
-            const tx_main = (targetPos.x - playerVehicle.position.x) * mapScale;
-            const tz_main = (targetPos.z - playerVehicle.position.z) * mapScale;
-            
-            // マップ上のガイドライン
-            mapCtx.setLineDash([8, 4]);
-            mapCtx.strokeStyle = gameMode === 'BIKE' ? (missionState === 'PICKUP' ? 'gold' : '#0ff') : '#00ffff';
-            mapCtx.lineWidth = 4;
-            mapCtx.beginPath();
-            mapCtx.moveTo(0, 0); 
-            mapCtx.lineTo(tx_main, tz_main);
-            mapCtx.stroke();
-
-            // ガソスタガイド
-            if (gameMode === 'BIKE' && needsRefuel) {
-                const tx_fuel = (fuelTargetPos.x - playerVehicle.position.x) * mapScale;
-                const tz_fuel = (fuelTargetPos.z - playerVehicle.position.z) * mapScale;
-                mapCtx.strokeStyle = '#32cd32';
-                mapCtx.lineWidth = 3;
+            // 経路表示 (道路に沿ったL字ルート)
+            const drawRoute = (target_pos, color, dash = [8, 4]) => {
+                mapCtx.setLineDash(dash);
+                mapCtx.strokeStyle = color;
+                mapCtx.lineWidth = 5;
                 mapCtx.beginPath();
                 mapCtx.moveTo(0, 0);
-                mapCtx.lineTo(tx_fuel, tz_fuel);
+
+                // 中間地点: 道路の交差点 (自機の現在のX道路、ターゲットのZ道路)
+                const midX = Math.round(playerVehicle.position.x / GRID_SIZE) * GRID_SIZE;
+                const midZ = target_pos.z;
+                const cornerX = midX;
+                const cornerZ = midZ;
+
+                mapCtx.lineTo(toMapX(cornerX), toMapZ(playerVehicle.position.z));
+                mapCtx.lineTo(toMapX(cornerX), toMapZ(cornerZ));
+                mapCtx.lineTo(toMapX(target_pos.x), toMapZ(target_pos.z));
                 mapCtx.stroke();
+            };
+
+            // メインルート
+            const mainColor = gameMode === 'BIKE' ? (missionState === 'PICKUP' ? 'gold' : '#0ff') : '#00ffff';
+            drawRoute(targetPos, mainColor);
+
+            // ガソスタルート
+            if (gameMode === 'BIKE' && needsRefuel) {
+                drawRoute(fuelTargetPos, '#32cd32', [4, 4]);
                 drawTargetIcon(fuelTargetPos.x, fuelTargetPos.z, 'REFUEL');
+            }
+
+            // ターゲットアイコン描画
+            function drawTargetIcon(tx_val, tz_val, type) {
+                const tx = toMapX(tx_val);
+                const tz = toMapZ(tz_val);
+                mapCtx.fillStyle = (type === 'PICKUP') ? 'gold' : (type === 'DELIVERY' ? '#0ff' : (type === 'REFUEL' ? '#32cd32' : '#00ffff'));
+                mapCtx.shadowBlur = 15; mapCtx.shadowColor = mapCtx.fillStyle;
+                mapCtx.beginPath(); mapCtx.moveTo(tx, tz - 12); mapCtx.lineTo(tx - 8, tz + 6); mapCtx.lineTo(tx + 8, tz + 6);
+                mapCtx.closePath(); mapCtx.fill(); mapCtx.shadowBlur = 0;
             }
 
             mapCtx.setLineDash([]);
@@ -780,10 +780,18 @@
                     
                     let shouldStop = false;
                     const stopDist = 60;
-                    if (isNS) { if (distToNextIntersection < stopDist && distToNextIntersection > 5 && trafficPhase !== 0) shouldStop = true; }
-                    else { if (distToNextIntersection < stopDist && distToNextIntersection > 5 && trafficPhase !== 3) shouldStop = true; }
                     
-                    if (gz % 4 === 0 && isNS) {
+                    // 信号判定 (線路タイルでない場合のみ)
+                    if (!isRailway) {
+                        if (isNS) { 
+                            if (distToNextIntersection < stopDist && distToNextIntersection > 5 && trafficPhase !== 0) shouldStop = true; 
+                        } else { 
+                            if (distToNextIntersection < stopDist && distToNextIntersection > 5 && trafficPhase !== 3) shouldStop = true; 
+                        }
+                    }
+                    
+                    // 踏切判定 (線路タイルかつ南北走行の場合のみ)
+                    if (isRailway && isNS) {
                         const relZTrain = (c.mesh.position.z % (GRID_SIZE * 4) + (GRID_SIZE * 4)) % (GRID_SIZE * 4);
                         const dTrain = (c.dir.z > 0) ? ((GRID_SIZE * 4) - relZTrain) : relZTrain;
                         if (dTrain < 60 && dTrain > 5 && (cycle > 500 || cycle < 100)) shouldStop = true;
