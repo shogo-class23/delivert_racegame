@@ -253,15 +253,9 @@
             group.position.set(rx, 0, rz); scene.add(group); return group;
         }
 
-        // --- 障害物 ---
-        const obstacles = [];
+        // --- 障害物 (削除済み) ---
         function spawn() {
-            if (gameState !== 'PLAYING' || Math.abs(speed) < 0.1) return;
-            const pos = cub.position.clone().add(direction.clone().multiplyScalar(80));
-            const rightVec = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), direction).normalize();
-            pos.add(rightVec.multiplyScalar((Math.random()-0.5) * 14));
-            const obs = new THREE.Mesh(new THREE.ConeGeometry(0.6, 1.2, 8), new THREE.MeshStandardMaterial({ color: 0xff4500 }));
-            obs.position.copy(pos); obs.position.y = 0.6; scene.add(obs); obstacles.push(obs);
+            // ミッションに関わるスポーンが必要な場合はここに記述（現在はなし）
         }
         setInterval(spawn, 1000);
 
@@ -411,9 +405,6 @@
                 camera.position.lerp(cub.position.clone().add(new THREE.Vector3(0, 7, 15).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY)), 0.1);
                 camera.lookAt(cub.position.x, 1.5, cub.position.z);
 
-                obstacles.forEach((obs, i) => {
-                    if (cub.position.distanceTo(obs.position) < 2.0) endGame("障害物に激突しました");
-                });
                 // 当たり判定 (建物)
                 buildingMeshes.forEach(b => {
                     const dist = cub.position.distanceTo(b.pos);
