@@ -11,6 +11,9 @@
         #nitro-bar { width: 200px; height: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; margin-top: 5px; overflow: hidden; }
         #nitro-fill { width: 0%; height: 100%; background: #ff4500; transition: width 0.1s; }
         
+        #fuel-container { width: 200px; height: 15px; background: rgba(0,0,0,0.5); border-radius: 5px; margin-top: 5px; overflow: hidden; border: 1px solid #fff; }
+        #fuel-fill { width: 100%; height: 100%; background: #32cd32; transition: width 0.3s; }
+        
         #mission-ui {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
             background: rgba(0,0,0,0.8); color: gold; padding: 15px 40px; border-radius: 30px;
@@ -39,6 +42,8 @@
         <div id="speed">時速: 0 km/h</div>
         <div id="nitro-label">激辛ニトロ</div>
         <div id="nitro-bar"><div id="nitro-fill"></div></div>
+        <div id="fuel-label" style="margin-top: 10px;">燃料 (GAS)</div>
+        <div id="fuel-container"><div id="fuel-fill"></div></div>
         <div id="score" style="margin-top: 10px; font-size: 18px;">配達距離: 0m</div>
         <div id="deliv-count" style="margin-top: 5px; font-size: 20px; color: gold;">完了数: 0</div>
     </div>
@@ -89,6 +94,8 @@
         let missionState = 'PICKUP'; 
         let speed = 0;
         let nitroTimer = 0;
+        let fuel = 100;
+        const fuelMax = 100;
         let score = 0;
         let deliveryCount = 0;
         let currentRotationY = 0;
@@ -138,10 +145,13 @@
         scene.add(marker);
 
         function setRandomTarget() {
+            if (fuel < 30 && missionState !== 'REFUEL') {
+                missionState = 'REFUEL';
+            }
+
             targetGX = Math.round((cub.position.x / GRID_SIZE) + (Math.random() > 0.5 ? 2 : -2));
             targetGZ = Math.round((cub.position.z / GRID_SIZE) + (Math.random() > 0.5 ? 2 : -2));
             
-            // 道路の真ん中ではなく、角の建物の位置（-bOffset）にターゲットを設定
             const bOffset = 40; 
             targetPos.set(targetGX * GRID_SIZE - bOffset, 0, targetGZ * GRID_SIZE - bOffset);
             marker.position.copy(targetPos);
@@ -150,10 +160,14 @@
                 beam.material.color.set(0xffff00); ring.material.color.set(0xffff00);
                 document.getElementById('mission-text').innerText = "お店（黄色の建物）へ荷物を取りに行け！";
                 document.getElementById('mission-ui').style.color = "gold";
-            } else {
+            } else if (missionState === 'DELIVERY') {
                 beam.material.color.set(0x00ffff); ring.material.color.set(0x00ffff);
                 document.getElementById('mission-text').innerText = "お届け先（青色の家）へ配達せよ！";
                 document.getElementById('mission-ui').style.color = "#00ffff";
+            } else if (missionState === 'REFUEL') {
+                beam.material.color.set(0x00ff00); ring.material.color.set(0x00ff00);
+                document.getElementById('mission-text').innerText = "🚨 緊急！ガソスタ（緑色）で給油せよ！";
+                document.getElementById('mission-ui').style.color = "#32cd32";
             }
             // 道路の再生成を促す
             roads.clear();
@@ -185,9 +199,10 @@
                 let special = false;
                 
                 if (isTarget) {
-                    // 交差点の4つの角のうち1つを目的地にする
                     if (sx === -1 && sz === -1) {
-                        color = missionState === 'PICKUP' ? 0xffcc00 : 0x00ccff;
+                        if (missionState === 'PICKUP') color = 0xffcc00;
+                        else if (missionState === 'DELIVERY') color = 0x00ccff;
+                        else if (missionState === 'REFUEL') color = 0x32cd32;
                         special = true;
                     }
                 }
@@ -233,9 +248,12 @@
             const tz = (targetPos.z - cub.position.z) * mapScale;
             
             // ターゲットアイコン (三角マーク)
-            mapCtx.fillStyle = missionState === 'PICKUP' ? 'gold' : '#0ff';
+            if (missionState === 'PICKUP') mapCtx.fillStyle = 'gold';
+            else if (missionState === 'DELIVERY') mapCtx.fillStyle = '#0ff';
+            else if (missionState === 'REFUEL') mapCtx.fillStyle = '#32cd32';
+            
             mapCtx.shadowBlur = 15;
-            mapCtx.shadowColor = missionState === 'PICKUP' ? 'gold' : '#0ff';
+            mapCtx.shadowColor = mapCtx.fillStyle;
             
             mapCtx.beginPath();
             // 上向きの大きな三角形
@@ -261,15 +279,19 @@
 
         function checkInteraction() {
             if (cub.position.distanceTo(targetPos) < 20 && Math.abs(speed) < 0.1) {
-                // 現在の建物を「無敵リスト」に入れる
                 immuneBuilding = targetPos.clone();
 
                 if (missionState === 'PICKUP') {
                     missionState = 'DELIVERY'; cub.cargo.visible = true; setRandomTarget();
-                } else {
+                } else if (missionState === 'DELIVERY') {
                     missionState = 'PICKUP'; cub.cargo.visible = false; deliveryCount++; score += 1000;
                     document.getElementById('deliv-count').innerText = `完了数: ${deliveryCount}`;
                     setRandomTarget(); nitroTimer = 300;
+                } else if (missionState === 'REFUEL') {
+                    fuel = 100;
+                    // 元のミッションに戻る
+                    missionState = cub.cargo.visible ? 'DELIVERY' : 'PICKUP';
+                    setRandomTarget();
                 }
             }
         }
@@ -300,6 +322,22 @@
                 direction.set(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), currentRotationY);
                 cub.position.add(direction.clone().multiplyScalar(speed));
                 cub.rotation.y = currentRotationY;
+
+                // 燃料消費
+                if (Math.abs(speed) > 0.01) {
+                    fuel -= 0.03 + (Math.abs(speed) * 0.05); // 速いほど減る
+                }
+                if (fuel <= 0) {
+                    fuel = 0;
+                    endGame("ガス欠になりました");
+                }
+                document.getElementById('fuel-fill').style.width = fuel + '%';
+                if (fuel < 30) {
+                    document.getElementById('fuel-fill').style.background = '#ff0000';
+                    if (missionState !== 'REFUEL') setRandomTarget(); // 緊急ミッション発動
+                } else {
+                    document.getElementById('fuel-fill').style.background = '#32cd32';
+                }
 
                 const gx = Math.round(cub.position.x / GRID_SIZE);
                 const gz = Math.round(cub.position.z / GRID_SIZE);
