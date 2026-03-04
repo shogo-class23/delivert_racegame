@@ -285,7 +285,6 @@
                 if (gameMode === 'BIKE') {
                     targetPos.set(targetGX * GRID_SIZE - 40, 0, targetGZ * GRID_SIZE - 40);
                 } else {
-                    // バス停は交差点の少し手前の道路脇に設置
                     targetPos.set(targetGX * GRID_SIZE - 8, 0, targetGZ * GRID_SIZE - 20);
                     busStopModel.position.copy(targetPos);
                     busStopModel.visible = true;
@@ -314,8 +313,11 @@
                 document.getElementById('mission-ui').style.color = "#00ffff";
             }
 
+            // 【安全な削除】無限ループを回避
             roads.clear();
-            while(scene.children.find(c => c.isRoad)) scene.remove(scene.children.find(c => c.isRoad));
+            const toRemove = [];
+            scene.children.forEach(child => { if (child.isRoad) toRemove.push(child); });
+            toRemove.forEach(child => scene.remove(child));
             buildingMeshes.length = 0;
         }
 
@@ -776,6 +778,7 @@
                     const normX = ((c.mesh.position.x % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
                     const normZ = ((c.mesh.position.z % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
                     const isNS = Math.abs(c.dir.z) > Math.abs(c.dir.x);
+                    const isRailway = (gz % 4 === 0); // ここで定義
                     const distToNextIntersection = isNS ? (c.dir.z > 0 ? (GRID_SIZE - normZ) : normZ) : (c.dir.x > 0 ? (GRID_SIZE - normX) : normX);
                     
                     let shouldStop = false;
