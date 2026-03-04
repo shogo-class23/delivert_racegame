@@ -123,7 +123,7 @@
         // --- 信号機管理 ---
         let trafficPhase = 0; // 0:NS青, 1:NS黄, 2:全赤, 3:EW青, 4:EW黄, 5:全赤
         let trafficTimer = 0;
-        const trafficLights = []; 
+        let trafficLights = []; 
         
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -226,11 +226,11 @@
 
         function createTrafficLight(x, z) {
             const group = new THREE.Group();
-            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 10), new THREE.MeshStandardMaterial({ color: 0x444444 }));
-            pole.position.y = 5; group.add(pole);
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 12), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+            pole.position.y = 6; group.add(pole);
 
-            const box = new THREE.Mesh(new THREE.BoxGeometry(1.6, 4, 1.6), new THREE.MeshStandardMaterial({ color: 0x111111 }));
-            box.position.set(0, 9, 0); group.add(box);
+            const box = new THREE.Mesh(new THREE.BoxGeometry(2, 5, 2), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+            box.position.set(0, 11, 0); group.add(box);
 
             const lights = { ns: {red:[], yellow:[], green:[]}, ew: {red:[], yellow:[], green:[]} };
 
@@ -238,24 +238,41 @@
                 const angle = i * (Math.PI / 2);
                 const lGroup = new THREE.Group();
                 lGroup.rotation.y = angle;
-                
-                // 0, 2 は南北(NS), 1, 3 は東西(EW)
                 const side = (i % 2 === 0) ? lights.ns : lights.ew;
 
-                const r = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshStandardMaterial({ color: 0x330000, emissive: 0xff0000, emissiveIntensity: 0 }));
-                r.position.set(0, 10.2, 0.81); lGroup.add(r); side.red.push(r);
+                // 各ライトの配置設定 (高さ, 色名)
+                const config = [
+                    { y: 12.5, type: 'red', off: 0x220000, on: 0xff0000 },
+                    { y: 11.0, type: 'yellow', off: 0x222200, on: 0xffff00 },
+                    { y: 9.5,  type: 'green', off: 0x002200, on: 0x00ff00 }
+                ];
 
-                const y = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshStandardMaterial({ color: 0x333300, emissive: 0xffff00, emissiveIntensity: 0 }));
-                y.position.set(0, 9, 0.81); lGroup.add(y); side.yellow.push(y);
+                config.forEach(c => {
+                    // ライト本体 (少し大きく 0.6)
+                    const light = new THREE.Mesh(
+                        new THREE.CircleGeometry(0.6, 16),
+                        new THREE.MeshBasicMaterial({ color: c.off })
+                    );
+                    light.position.set(0, c.y, 1.01);
+                    lGroup.add(light);
+                    side[c.type].push(light);
 
-                const g = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshStandardMaterial({ color: 0x003300, emissive: 0x00ff00, emissiveIntensity: 0 }));
-                g.position.set(0, 7.8, 0.81); lGroup.add(g); side.green.push(g);
+                    // ひさし (バイザー)
+                    const visor = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.7, 0.7, 0.8, 16, 1, true, 0, Math.PI),
+                        new THREE.MeshStandardMaterial({ color: 0x111111, side: THREE.DoubleSide })
+                    );
+                    visor.rotation.x = Math.PI / 2;
+                    visor.position.set(0, c.y + 0.3, 1.2);
+                    lGroup.add(visor);
+                });
 
                 group.add(lGroup);
             }
 
             group.position.set(x, 0, z);
-            trafficLights.push(lights);
+            group.isTrafficLight = true;
+            trafficLights.push({ group, lights });
             return group;
         }
 
@@ -402,17 +419,21 @@
                     else if (trafficPhase === 4 && trafficTimer > 150) { trafficPhase = 5; trafficTimer = 0; }
                     else if (trafficPhase === 5 && trafficTimer > 100) { trafficPhase = 0; trafficTimer = 0; }
                     
-                    trafficLights.forEach(l => {
+                    // 存在しない信号機をリストから除外
+                    trafficLights = trafficLights.filter(tl => tl.group.parent !== null);
+
+                    trafficLights.forEach(tl => {
+                        const l = tl.lights;
                         // 南北方向
-                        const nsState = (trafficPhase === 0) ? 'G' : (trafficPhase === 1 ? 'Y' : 'R');
-                        l.ns.red.forEach(m => m.emissiveIntensity = nsState === 'R' ? 1 : 0);
-                        l.ns.yellow.forEach(m => m.emissiveIntensity = nsState === 'Y' ? 1 : 0);
-                        l.ns.green.forEach(m => m.emissiveIntensity = nsState === 'G' ? 1 : 0);
+                        const nsS = (trafficPhase === 0) ? 'G' : (trafficPhase === 1 ? 'Y' : 'R');
+                        l.ns.red.forEach(m => m.material.color.set(nsS === 'R' ? 0xff0000 : 0x220000));
+                        l.ns.yellow.forEach(m => m.material.color.set(nsS === 'Y' ? 0xffff00 : 0x222200));
+                        l.ns.green.forEach(m => m.material.color.set(nsS === 'G' ? 0x00ff00 : 0x002200));
                         // 東西方向
-                        const ewState = (trafficPhase === 3) ? 'G' : (trafficPhase === 4 ? 'Y' : 'R');
-                        l.ew.red.forEach(m => m.emissiveIntensity = ewState === 'R' ? 1 : 0);
-                        l.ew.yellow.forEach(m => m.emissiveIntensity = ewState === 'Y' ? 1 : 0);
-                        l.ew.green.forEach(m => m.emissiveIntensity = ewState === 'G' ? 1 : 0);
+                        const ewS = (trafficPhase === 3) ? 'G' : (trafficPhase === 4 ? 'Y' : 'R');
+                        l.ew.red.forEach(m => m.material.color.set(ewS === 'R' ? 0xff0000 : 0x220000));
+                        l.ew.yellow.forEach(m => m.material.color.set(ewS === 'Y' ? 0xffff00 : 0x222200));
+                        l.ew.green.forEach(m => m.material.color.set(ewS === 'G' ? 0x00ff00 : 0x002200));
                     });
                 };
                 updateLights();
@@ -461,26 +482,40 @@
                 // 信号無視判定
                 const relX = Math.abs((cub.position.x + GRID_SIZE/2) % GRID_SIZE - GRID_SIZE/2);
                 const relZ = Math.abs((cub.position.z + GRID_SIZE/2) % GRID_SIZE - GRID_SIZE/2);
-                const inIntersection = relX < 12 && relZ < 12;
+                const inIntersection = relX < 15 && relZ < 15; // 判定範囲を少し広げる
 
                 if (inIntersection) {
                     if (!hasViolated && Math.abs(speed) > 0.1) {
-                        // プレイヤーの向き（南北か東西か）
+                        // プレイヤーの向きを判定 (Vector3の向きから)
                         const isMovingNS = Math.abs(direction.z) > Math.abs(direction.x);
-                        let isRed = false;
+                        let isIllegal = false;
+
                         if (isMovingNS) {
-                            isRed = (trafficPhase >= 1); // 南北が青(0)以外ならダメ（黄色も厳しく判定）
+                            // 南北走行中: フェーズ0以外(黄、赤、EW側青)はすべて違反
+                            if (trafficPhase !== 0) isIllegal = true;
                         } else {
-                            isRed = (trafficPhase <= 2 || trafficPhase === 5); // 東西が青(3)以外ならダメ
+                            // 東西走行中: フェーズ3以外(黄、赤、NS側青)はすべて違反
+                            if (trafficPhase !== 3) isIllegal = true;
                         }
 
-                        if (isRed) {
+                        if (isIllegal) {
                             fuel -= 20;
                             hasViolated = true;
+                            
+                            // 強制的にアラートを表示
                             const alert = document.getElementById('center-alert');
                             alert.innerText = "🚨 信号無視！ -20 GAS";
                             alert.style.display = 'block';
-                            setTimeout(() => { alert.style.display = 'none'; alert.innerText = "🚨 燃料不足！"; }, 2000);
+                            
+                            // アニメーションのリセット
+                            alert.style.animation = 'none';
+                            alert.offsetHeight; // reflow
+                            alert.style.animation = null;
+
+                            setTimeout(() => { 
+                                alert.style.display = 'none'; 
+                                alert.innerText = "🚨 燃料不足！"; 
+                            }, 2000);
                         }
                     }
                 } else {
