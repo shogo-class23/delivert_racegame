@@ -11,6 +11,33 @@
         #nitro-bar { width: 200px; height: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; margin-top: 5px; overflow: hidden; }
         #nitro-fill { width: 0%; height: 100%; background: #ff4500; transition: width 0.1s; }
         #instructions { position: absolute; bottom: 20px; width: 100%; text-align: center; color: white; text-shadow: 1px 1px 2px black; font-size: 14px; pointer-events: none; }
+        
+        /* マップのスタイル */
+        #map-container {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 120px;
+            height: 180px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 2px solid #555;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        #map-canvas {
+            width: 100%;
+            height: 100%;
+        }
+        #map-label {
+            position: absolute;
+            top: 2px;
+            width: 100%;
+            text-align: center;
+            color: #0f0;
+            font-size: 10px;
+            font-family: monospace;
+        }
+
         #start-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 100; }
         #start-button { padding: 15px 40px; font-size: 24px; background: #ff4500; border: none; border-radius: 30px; color: white; cursor: pointer; box-shadow: 0 5px 15px rgba(255,69,0,0.4); }
         #game-over { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,0,0,0.4); display: none; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 101; }
@@ -22,6 +49,12 @@
         <div>激辛ニトロ</div>
         <div id="nitro-bar"><div id="nitro-fill"></div></div>
         <div id="score" style="margin-top: 10px; font-size: 18px;">配達距離: 0m</div>
+    </div>
+
+    <!-- ミニマップ -->
+    <div id="map-container">
+        <div id="map-label">LIVE GPS</div>
+        <canvas id="map-canvas"></canvas>
     </div>
 
     <div id="instructions">
@@ -176,6 +209,62 @@
         const obstacles = [];
         const items = [];
 
+        // --- マップ描画用 ---
+        const mapCanvas = document.getElementById('map-canvas');
+        const mapCtx = mapCanvas.getContext('2d');
+        mapCanvas.width = 120;
+        mapCanvas.height = 180;
+
+        function updateMap() {
+            mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+            
+            // 背景のグリッド（スクロール感）
+            mapCtx.strokeStyle = '#222';
+            const offset = (cub.position.z * 10) % 20;
+            for(let y=0; y<mapCanvas.height; y+=20) {
+                mapCtx.beginPath();
+                mapCtx.moveTo(0, y + offset);
+                mapCtx.lineTo(mapCanvas.width, y + offset);
+                mapCtx.stroke();
+            }
+
+            const centerX = mapCanvas.width / 2;
+            const playerY = mapCanvas.height - 30;
+            const scale = 10; // 1m = 10px
+
+            // 障害物 (赤)
+            mapCtx.fillStyle = '#ff4500';
+            obstacles.forEach(obs => {
+                const relX = (obs.position.x) * scale;
+                const relZ = (obs.position.z - cub.position.z) * scale;
+                if (playerY + relZ > 0) {
+                    mapCtx.beginPath();
+                    mapCtx.arc(centerX + relX, playerY + relZ, 3, 0, Math.PI * 2);
+                    mapCtx.fill();
+                }
+            });
+
+            // アイテム (緑)
+            mapCtx.fillStyle = '#0f0';
+            items.forEach(item => {
+                const relX = (item.position.x) * scale;
+                const relZ = (item.position.z - cub.position.z) * scale;
+                if (playerY + relZ > 0) {
+                    mapCtx.beginPath();
+                    mapCtx.rect(centerX + relX - 3, playerY + relZ - 3, 6, 6);
+                    mapCtx.fill();
+                }
+            });
+
+            // プレイヤー (青)
+            mapCtx.fillStyle = '#00aaff';
+            mapCtx.beginPath();
+            mapCtx.moveTo(centerX + (cub.position.x * scale), playerY - 5);
+            mapCtx.lineTo(centerX + (cub.position.x * scale) - 4, playerY + 5);
+            mapCtx.lineTo(centerX + (cub.position.x * scale) + 4, playerY + 5);
+            mapCtx.fill();
+        }
+
         function spawnEntity() {
             if (gameState !== 'PLAYING') return;
 
@@ -304,6 +393,7 @@
                 });
             }
 
+            updateMap();
             renderer.render(scene, camera);
             requestAnimationFrame(update);
         }
